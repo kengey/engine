@@ -3,6 +3,7 @@ Object.assign(pc, function () {
     /**
      * @constructor
      * @name pc.SpriteAnimationClip
+     * @extends pc.EventHandler
      * @classdesc Handles playing of sprite animations and loading of relevant sprite assets.
      * @param {pc.SpriteComponent} component The sprite component managing this clip.
      * @param {Object} data Data for the new animation clip.
@@ -19,6 +20,8 @@ Object.assign(pc, function () {
      * @property {Boolean} isPaused Whether the animation is currently paused.
      */
     var SpriteAnimationClip = function (component, data) {
+        pc.EventHandler.call(this);
+
         this._component = component;
 
         this._frame = 0;
@@ -34,9 +37,9 @@ Object.assign(pc, function () {
         this._paused = false;
 
         this._time = 0;
-
-        pc.events.attach(this);
     };
+    SpriteAnimationClip.prototype = Object.create(pc.EventHandler.prototype);
+    SpriteAnimationClip.prototype.constructor = SpriteAnimationClip;
 
     Object.assign(SpriteAnimationClip.prototype, {
         // When sprite asset is added bind it
@@ -170,7 +173,7 @@ Object.assign(pc, function () {
                 }
             } else if (this._time > duration) {
                 if (this.loop) {
-                    this._time = this._time % duration;
+                    this._time %= duration;
                 } else {
                     this._time = duration;
                 }
@@ -360,6 +363,8 @@ Object.assign(pc, function () {
 
                     // if we have a time then force update
                     // frame based on the time (check if fps is not 0 otherwise time will be Infinity)
+
+                    /* eslint-disable no-self-assign */
                     if (this.time && this.fps) {
                         this.time = this.time;
                     } else {
@@ -367,6 +372,7 @@ Object.assign(pc, function () {
                         // then force update frame counter
                         this.frame = this.frame;
                     }
+                    /* eslint-enable no-self-assign */
                 }
             }
         }

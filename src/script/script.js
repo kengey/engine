@@ -1,4 +1,6 @@
 Object.assign(pc, function () {
+    var components = ['x', 'y', 'z', 'w'];
+
     var rawToValue = function (app, args, value, old) {
         var i;
 
@@ -38,7 +40,7 @@ Object.assign(pc, function () {
                 if (value instanceof pc.GraphNode) {
                     return value;
                 } else if (typeof value === 'string') {
-                    return app.root.findByGuid(value);
+                    return app.getEntityFromIndex(value);
                 }
                 return null;
             case 'rgb':
@@ -56,8 +58,10 @@ Object.assign(pc, function () {
                     }
                     if (!old) old = new pc.Color();
 
-                    for (i = 0; i < 4; i++)
-                        old.data[i] = (i === 4 && value.length === 3) ? 1 : value[i];
+                    old.r = value[0];
+                    old.g = value[1];
+                    old.b = value[2];
+                    old.a = (value.length === 3) ? 1 : value[3];
 
                     return old;
                 } else if (typeof value === 'string' && /#([0-9abcdef]{2}){3,4}/i.test(value)) {
@@ -87,7 +91,7 @@ Object.assign(pc, function () {
                     if (!old) old = new pc['Vec' + len]();
 
                     for (i = 0; i < len; i++)
-                        old.data[i] = value[i];
+                        old[components[i]] = value[i];
 
                     return old;
                 }
@@ -114,9 +118,9 @@ Object.assign(pc, function () {
     /**
      * @constructor
      * @name pc.ScriptAttributes
-     * @classdesc Container of Script Attribute definitions. Implements an interface to add/remove attributes and store their definition for a {@link ScriptType}.
-     * Note: An instance of pc.ScriptAttributes is created automatically by each {@link ScriptType}.
-     * @param {ScriptType} scriptType Script Type that attributes relate to.
+     * @classdesc Container of Script Attribute definitions. Implements an interface to add/remove attributes and store their definition for a {@link pc.ScriptType}.
+     * Note: An instance of pc.ScriptAttributes is created automatically by each {@link pc.ScriptType}.
+     * @param {pc.ScriptType} scriptType Script Type that attributes relate to.
      */
     var ScriptAttributes = function (scriptType) {
         this.scriptType = scriptType;
@@ -129,18 +133,18 @@ Object.assign(pc, function () {
      * @description Add Attribute
      * @param {String} name Name of an attribute
      * @param {Object} args Object with Arguments for an attribute
-     * @param {String} args.type Type of an attribute value, list of possible types:
-     * boolean, number, string, json, asset, entity, rgb, rgba, vec2, vec3, vec4, curve
-     * @param {?} [args.default] Default attribute value
+     * @param {("boolean"|"number"|"string"|"json"|"asset"|"entity"|"rgb"|"rgba"|"vec2"|"vec3"|"vec4"|"curve")} args.type Type of an attribute value
+     * @param {*} [args.default] Default attribute value
      * @param {String} [args.title] Title for Editor's for field UI
      * @param {String} [args.description] Description for Editor's for field UI
-     * @param {(String|String[])} [args.placeholder] Placeholder for Editor's for field UI.
+     * @param {String|String[]} [args.placeholder] Placeholder for Editor's for field UI.
      * For multi-field types, such as vec2, vec3, and others use array of strings.
      * @param {Boolean} [args.array] If attribute can hold single or multiple values
      * @param {Number} [args.size] If attribute is array, maximum number of values can be set
      * @param {Number} [args.min] Minimum value for type 'number', if max and min defined, slider will be rendered in Editor's UI
      * @param {Number} [args.max] Maximum value for type 'number', if max and min defined, slider will be rendered in Editor's UI
      * @param {Number} [args.precision] Level of precision for field type 'number' with floating values
+     * @param {Number} [args.step] Step value for type 'number'. The amount used to increment the value when using the arrow keys in the Editor's UI.
      * @param {String} [args.assetType] Name of asset type to be used in 'asset' type attribute picker in Editor's UI, defaults to '*' (all)
      * @param {String[]} [args.curves] List of names for Curves for field type 'curve'
      * @param {String} [args.color] String of color channels for Curves for field type 'curve', can be any combination of `rgba` characters.
@@ -264,7 +268,7 @@ Object.assign(pc, function () {
      * @static
      * @function
      * @name pc.createScript
-     * @description Method to create named {@link ScriptType}.
+     * @description Method to create named {@link pc.ScriptType}.
      * It returns new function (class) "Script Type", which is auto-registered to {@link pc.ScriptRegistry} using it's name.
      * This is the main interface to create Script Types, to define custom logic using JavaScript, that is used to create interaction for entities.
      * @param {String} name unique Name of a Script Type.
@@ -274,7 +278,7 @@ Object.assign(pc, function () {
      * system, entity, create, destroy, swap, move, scripts, onEnable, onDisable, onPostStateChange, has, on, off, fire, once, hasEvent
      * @param {pc.Application} [app] Optional application handler, to choose which {@link pc.ScriptRegistry} to add a script to.
      * By default it will use `pc.Application.getApplication()` to get current {@link pc.Application}.
-     * @returns {Function} The constructor of a {@link ScriptType}, which the developer is meant to extend by adding attributes and prototype methods.
+     * @returns {pc.ScriptType} The constructor of a {@link pc.ScriptType}, which the developer is meant to extend by adding attributes and prototype methods.
      * @example
      * var Turning = pc.createScript('turn');
      *
@@ -303,14 +307,15 @@ Object.assign(pc, function () {
 
         /**
          * @constructor
-         * @name ScriptType
+         * @name pc.ScriptType
+         * @extends pc.EventHandler
          * @classdesc Represents the type of a script. It is returned by {@link pc.createScript}. Also referred to as Script Type.<br />
          * The type is to be extended using its JavaScript prototype. There is a <strong>list of methods</strong>
          * that will be executed by the engine on instances of this type, such as: <ul><li>initialize</li><li>postInitialize</li><li>update</li><li>postUpdate</li><li>swap</li></ul>
          * <strong>initialize</strong> and <strong>postInitialize</strong> - are called if defined when script is about to run for the first time - postInitialize will run after all initialize methods are executed in the same tick or enabling chain of actions.<br />
          * <strong>update</strong> and <strong>postUpdate</strong> - methods are called if defined for enabled (running state) scripts on each tick.<br />
-         * <strong>swap</strong> - This method will be called when a {@link ScriptType} that already exists in the registry gets redefined.
-         * If the new {@link ScriptType} has a `swap` method in its prototype, then it will be executed to perform hot-reload at runtime.
+         * <strong>swap</strong> - This method will be called when a {@link pc.ScriptType} that already exists in the registry gets redefined.
+         * If the new {@link pc.ScriptType} has a `swap` method in its prototype, then it will be executed to perform hot-reload at runtime.
          * @property {pc.Application} app The {@link pc.Application} that the instance of this type belongs to.
          * @property {pc.Entity} entity The {@link pc.Entity} that the instance of this type belongs to.
          * @property {Boolean} enabled True if the instance of this type is in running state. False when script is not running,
@@ -318,18 +323,18 @@ Object.assign(pc, function () {
          * When disabled no update methods will be called on each tick.
          * initialize and postInitialize methods will run once when the script instance is in `enabled` state during app tick.
          * @param {Object} args The input arguments object
-         * @param {Object} args.app The {@link pc.Application} that is running the script
-         * @param {Object} args.entity The {@link pc.Entity} that the script is attached to
+         * @param {pc.Application} args.app The {@link pc.Application} that is running the script
+         * @param {pc.Entity} args.entity The {@link pc.Entity} that the script is attached to
          *
          */
         var script = function (args) {
+            pc.EventHandler.call(this);
+
             // #ifdef DEBUG
             if (!args || !args.app || !args.entity) {
                 console.warn('script \'' + name + '\' has missing arguments in constructor');
             }
             // #endif
-
-            pc.events.attach(this);
 
             this.app = args.app;
             this.entity = args.entity;
@@ -337,15 +342,22 @@ Object.assign(pc, function () {
             this._enabledOld = this.enabled;
             this.__destroyed = false;
             this.__attributes = { };
-            this.__attributesRaw = args.attributes || null;
+            this.__attributesRaw = args.attributes || { }; // need at least an empty object to make sure default attributes are initialized
             this.__scriptType = script;
+
+            // the order in the script component that the
+            // methods of this script instance will run relative to
+            // other script instances in the component
+            this.__executionOrder = -1;
         };
+        script.prototype = Object.create(pc.EventHandler.prototype);
+        script.prototype.constructor = script;
 
         /**
          * @private
          * @readonly
          * @static
-         * @name ScriptType.__name
+         * @name pc.ScriptType.__name
          * @type String
          * @description Name of a Script Type.
          */
@@ -356,7 +368,7 @@ Object.assign(pc, function () {
          * @static
          * @readonly
          * @type pc.ScriptAttributes
-         * @name ScriptType.attributes
+         * @name pc.ScriptType#attributes
          * @description The interface to define attributes for Script Types. Refer to {@link pc.ScriptAttributes}
          * @example
          * var PlayerController = pc.createScript('playerController');
@@ -395,7 +407,7 @@ Object.assign(pc, function () {
          * @readonly
          * @static
          * @function
-         * @name ScriptType.extend
+         * @name pc.ScriptType.extend
          * @param {Object} methods Object with methods, where key - is name of method, and value - is function.
          * @description Shorthand function to extend Script Type prototype with list of methods.
          * @example
@@ -420,8 +432,42 @@ Object.assign(pc, function () {
         };
 
         /**
+         * @function
+         * @name pc.ScriptType#[initialize]
+         * @description Called when script is about to run for the first time.
+         */
+
+        /**
+         * @function
+         * @name pc.ScriptType#[postInitialize]
+         * @description Called after all initialize methods are executed in the same tick or enabling chain of actions.
+         */
+
+        /**
+         * @function
+         * @name pc.ScriptType#[update]
+         * @description Called for enabled (running state) scripts on each tick.
+         * @param {Number} dt The delta time in seconds since the last frame.
+         */
+
+        /**
+         * @function
+         * @name pc.ScriptType#[postUpdate]
+         * @description Called for enabled (running state) scripts on each tick, after update.
+         * @param {Number} dt The delta time in seconds since the last frame.
+         */
+
+        /**
+         * @function
+         * @name pc.ScriptType#[swap]
+         * @description Called when a ScriptType that already exists in the registry
+         * gets redefined. If the new ScriptType has a `swap` method in its prototype,
+         * then it will be executed to perform hot-reload at runtime.
+         */
+
+        /**
          * @event
-         * @name ScriptType#enable
+         * @name pc.ScriptType#enable
          * @description Fired when a script instance becomes enabled
          * @example
          * PlayerController.prototype.initialize = function() {
@@ -433,7 +479,7 @@ Object.assign(pc, function () {
 
         /**
          * @event
-         * @name ScriptType#disable
+         * @name pc.ScriptType#disable
          * @description Fired when a script instance becomes disabled
          * @example
          * PlayerController.prototype.initialize = function() {
@@ -445,7 +491,7 @@ Object.assign(pc, function () {
 
         /**
          * @event
-         * @name ScriptType#state
+         * @name pc.ScriptType#state
          * @description Fired when a script instance changes state to enabled or disabled
          * @param {Boolean} enabled True if now enabled, False if disabled
          * @example
@@ -458,7 +504,7 @@ Object.assign(pc, function () {
 
         /**
          * @event
-         * @name ScriptType#destroy
+         * @name pc.ScriptType#destroy
          * @description Fired when a script instance is destroyed and removed from component
          * @example
          * PlayerController.prototype.initialize = function() {
@@ -471,7 +517,7 @@ Object.assign(pc, function () {
 
         /**
          * @event
-         * @name ScriptType#attr
+         * @name pc.ScriptType#attr
          * @description Fired when any script attribute has been changed
          * @param {String} name Name of attribute
          * @param {Object} value New value
@@ -486,7 +532,7 @@ Object.assign(pc, function () {
 
         /**
          * @event
-         * @name ScriptType#attr:[name]
+         * @name pc.ScriptType#attr:[name]
          * @description Fired when a specific script attribute has been changed
          * @param {Object} value New value
          * @param {Object} valueOld Old value
@@ -500,7 +546,7 @@ Object.assign(pc, function () {
 
         /**
          * @event
-         * @name ScriptType#error
+         * @name pc.ScriptType#error
          * @description Fired when a script instance had an exception. The script instance will be automatically disabled.
          * @param {Error} err Native JavaScript Error object with details of error
          * @param {String} method The method of the script instance that the exception originated from.
@@ -579,7 +625,7 @@ Object.assign(pc, function () {
     // reserved script attribute names
     createScript.reservedAttributes = [
         'app', 'entity', 'enabled', '_enabled', '_enabledOld', '_destroyed',
-        '__attributes', '__attributesRaw', '__scriptType',
+        '__attributes', '__attributesRaw', '__scriptType', '__executionOrder',
         '_callbacks', 'has', 'on', 'off', 'fire', 'once', 'hasEvent'
     ];
     var reservedAttributes = { };

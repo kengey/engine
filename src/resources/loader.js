@@ -4,23 +4,40 @@ Object.assign(pc, function () {
     /**
      * @constructor
      * @name pc.ResourceLoader
+     * @param {pc.Application} app The application
      * @classdesc Load resource data, potentially from remote sources. Caches resource on load to prevent
      * multiple requests. Add ResourceHandlers to handle different types of resources.
      */
-    var ResourceLoader = function () {
+    var ResourceLoader = function (app) {
         this._handlers = {};
         this._requests = {};
         this._cache = {};
+        this._app = app;
     };
 
     Object.assign(ResourceLoader.prototype, {
         /**
          * @function
          * @name pc.ResourceLoader#addHandler
-         * @description Add a handler for a resource type. Handler should support: load(url, callback) and open(url, data).
-         * Handlers can optionally support patch(asset, assets) to handle dependencies on other assets
-         * @param {String} type The name of the type that the handler will load
-         * @param {pc.ResourceHandler} handler An instance of a resource handler supporting load() and open().
+         * @description Add a {@link pc.ResourceHandler} for a resource type. Handler should support atleast load() and open().
+         * Handlers can optionally support patch(asset, assets) to handle dependencies on other assets.
+         * @param {String} type The name of the resource type that the handler will be registerd with. Can be:
+         * <ul>
+         *     <li>{@link pc.ASSET_ANIMATION}</li>
+         *     <li>{@link pc.ASSET_AUDIO}</li>
+         *     <li>{@link pc.ASSET_IMAGE}</li>
+         *     <li>{@link pc.ASSET_JSON}</li>
+         *     <li>{@link pc.ASSET_MODEL}</li>
+         *     <li>{@link pc.ASSET_MATERIAL}</li>
+         *     <li>{@link pc.ASSET_TEXT}</li>
+         *     <li>{@link pc.ASSET_TEXTURE}</li>
+         *     <li>{@link pc.ASSET_CUBEMAP}</li>
+         *     <li>{@link pc.ASSET_SHADER}</li>
+         *     <li>{@link pc.ASSET_CSS}</li>
+         *     <li>{@link pc.ASSET_HTML}</li>
+         *     <li>{@link pc.ASSET_SCRIPT}</li>
+         * </ul>
+         * @param {pc.ResourceHandler} handler An instance of a resource handler supporting atleast load() and open().
          * @example
          * var loader = new ResourceLoader();
          * loader.addHandler("json", new pc.JsonHandler());
@@ -30,10 +47,23 @@ Object.assign(pc, function () {
             handler._loader = this;
         },
 
+        /**
+         * @function
+         * @name pc.ResourceLoader#removeHandler
+         * @description Remove a {@link pc.ResourceHandler} for a resource type.
+         * @param {String} type The name of the type that the handler will be removed.
+         */
         removeHandler: function (type) {
             delete this._handlers[type];
         },
 
+        /**
+         * @function
+         * @name pc.ResourceLoader#getHandler
+         * @description Get a {@link pc.ResourceHandler} for a resource type.
+         * @param {String} type The name of the resource type that the handler is registerd with.
+         * @returns {pc.ResourceHandler} The registerd handler.
+         */
         getHandler: function (type) {
             return this._handlers[type];
         },
@@ -46,7 +76,7 @@ Object.assign(pc, function () {
          * the resource.
          * @param {String} url The URL of the resource to load.
          * @param {String} type The type of resource expected.
-         * @param {Function} callback The callback used when the resource is loaded or an error occurs.
+         * @param {pc.callbacks.ResourceLoader} callback The callback used when the resource is loaded or an error occurs.
          * @param {pc.Asset} [asset] Optional asset that is passed into handler
          * Passed (err, resource) where err is null if there are no errors.
          * @example
@@ -73,24 +103,63 @@ Object.assign(pc, function () {
             } else {
                 // new request
                 this._requests[key] = [callback];
-                handler.load(url, function (err, data, extra) {
-                    // make sure key exists because loader
-                    // might have been destroyed by now
-                    if (!this._requests[key])
-                        return;
 
-                    var i, len = this._requests[key].length;
-                    if (!err) {
-                        var resource = handler.open(url, data, asset);
-                        this._cache[key] = resource;
-                        for (i = 0; i < len; i++)
-                            this._requests[key][i](null, resource, extra);
-                    } else {
-                        for (i = 0; i < len; i++)
-                            this._requests[key][i](err);
+                var handleLoad = function (err, urlObj) {
+                    if (err) {
+                        console.error(err);
+                        if (this._requests[key]) {
+                            for (var i = 0, len = this._requests[key].length; i < len; i++) {
+                                this._requests[key][i](err);
+                            }
+                        }
+                        delete this._requests[key];
+                        return;
                     }
-                    delete this._requests[key];
-                }.bind(this), asset);
+
+                    handler.load(urlObj, function (err, data, extra) {
+                        // make sure key exists because loader
+                        // might have been destroyed by now
+                        if (!this._requests[key])
+                            return;
+
+                        var i, len = this._requests[key].length;
+
+                        var resource;
+                        if (! err) {
+                            try {
+                                resource = handler.open(urlObj.original, data, asset);
+                            } catch (ex) {
+                                err = ex;
+                            }
+                        }
+
+                        if (!err) {
+                            this._cache[key] = resource;
+                            for (i = 0; i < len; i++)
+                                this._requests[key][i](null, resource, extra);
+                        } else {
+                            console.error(err);
+                            for (i = 0; i < len; i++)
+                                this._requests[key][i](err);
+                        }
+                        delete this._requests[key];
+                    }.bind(this), asset);
+                }.bind(this);
+
+                var normalizedUrl = url.split('?')[0];
+                if (this._app.enableBundles && this._app.bundles.hasUrl(normalizedUrl)) {
+                    if (!this._app.bundles.canLoadUrl(normalizedUrl)) {
+                        handleLoad('Bundle for ' + url + ' not loaded yet');
+                        return;
+                    }
+
+                    this._app.bundles.loadUrl(normalizedUrl, function (err, fileUrlFromBundle) {
+                        handleLoad(err, { load: fileUrlFromBundle, original: url });
+                    });
+                } else {
+                    handleLoad(null, { load: url, original: url });
+                }
+
             }
         },
 
@@ -133,6 +202,13 @@ Object.assign(pc, function () {
             }
         },
 
+        /**
+         * @function
+         * @name pc.ResourceLoader#clearCache
+         * @description Remove resource from cache.
+         * @param {String} url The URL of the resource.
+         * @param {String} type The type of resource.
+         */
         clearCache: function (url, type) {
             delete this._cache[url + type];
         },
@@ -148,6 +224,30 @@ Object.assign(pc, function () {
         getFromCache: function (url, type) {
             if (this._cache[url + type]) {
                 return this._cache[url + type];
+            }
+        },
+
+        /**
+         * @private
+         * @function
+         * @name pc.ResourceLoader#enableRetry
+         * @description Enables retrying of failed requests when loading assets.
+         */
+        enableRetry: function () {
+            for (var key in this._handlers) {
+                this._handlers[key].retryRequests = true;
+            }
+        },
+
+        /**
+         * @private
+         * @function
+         * @name pc.ResourceLoader#disableRetry
+         * @description Disables retrying of failed requests when loading assets.
+         */
+        disableRetry: function () {
+            for (var key in this._handlers) {
+                this._handlers[key].retryRequests = false;
             }
         },
 

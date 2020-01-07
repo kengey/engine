@@ -6,7 +6,7 @@ Object.assign(pc, (function () {
      * @name pc.CurveSet
      * @classdesc A curve set is a collection of curves.
      * @description Creates a new curve set.
-     * @param {Array} [curveKeys] An array of arrays of keys (pairs of numbers with
+     * @param {Array<Number[]>} [curveKeys] An array of arrays of keys (pairs of numbers with
      * the time first and value second).
      */
     var CurveSet = function () {
@@ -55,10 +55,10 @@ Object.assign(pc, (function () {
          * @description Returns the interpolated value of all curves in the curve
          * set at the specified time.
          * @param {Number} time The time at which to calculate the value
-         * @param {Array} [result] The interpolated curve values at the specified time.
+         * @param {Number[]} [result] The interpolated curve values at the specified time.
          * If this parameter is not supplied, the function allocates a new array internally
          * to return the result.
-         * @returns {Array} The interpolated curve values at the specified time
+         * @returns {Number[]} The interpolated curve values at the specified time
          */
         value: function (time, result) {
             var length = this.curves.length;
@@ -97,20 +97,34 @@ Object.assign(pc, (function () {
             var numCurves = this.curves.length;
             var values = new Float32Array(precision * numCurves);
             var step = 1.0 / (precision - 1);
-            var temp = [];
 
-            for (var i = 0; i < precision; i++) { // quantize graph to table of interpolated values
-                var value = this.value(step * i, temp);
-                if (numCurves == 1) {
-                    values[i] = value[0];
-                } else {
-                    for (var j = 0; j < numCurves; j++) {
-                        values[i * numCurves + j] = value[j];
-                    }
+            for (var c = 0; c < numCurves; c++) {
+                var ev = new pc.CurveEvaluator(this.curves[c]);
+                for (var i = 0; i < precision; i++) { // quantize graph to table of interpolated values
+                    values[i * numCurves + c] = ev.evaluate(step * i);
                 }
             }
 
             return values;
+        },
+
+        /**
+         * @private
+         * @function
+         * @name pc.CurveSet#quantizeClamped
+         * @description This function will sample the curveset at regular intervals
+         * over the range [0..1] and clamp the result to min and max.
+         * @param {Number} precision The number of samples to return.
+         * @param {Number} min The minimum output value.
+         * @param {Number} max The maximum output value.
+         * @returns {Number[]} The set of quantized values.
+         */
+        quantizeClamped: function (precision, min, max) {
+            var result = this.quantize(precision);
+            for (var i = 0; i < result.length; ++i) {
+                result[i] = Math.min(max, Math.max(min, result[i]));
+            }
+            return result;
         }
     });
 
@@ -131,11 +145,12 @@ Object.assign(pc, (function () {
      * @type Number
      * @description The interpolation scheme applied to all curves in the curve set. Can be:
      * <ul>
-     *     <li>pc.CURVE_LINEAR</li>
-     *     <li>pc.CURVE_SMOOTHSTEP</li>
-     *     <li>pc.CURVE_CATMULL</li>
-     *     <li>pc.CURVE_CARDINAL</li>
+     *     <li>{@link pc.CURVE_LINEAR}</li>
+     *     <li>{@link pc.CURVE_SMOOTHSTEP}</li>
+     *     <li>{@link pc.CURVE_SPLINE}</li>
+     *     <li>{@link pc.CURVE_STEP}</li>
      * </ul>
+     * Defaults to {@link pc.CURVE_SMOOTHSTEP};
      */
     Object.defineProperty(CurveSet.prototype, 'type', {
         get: function () {

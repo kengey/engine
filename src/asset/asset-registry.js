@@ -2,6 +2,7 @@ Object.assign(pc, function () {
     /**
      * @constructor
      * @name pc.AssetRegistry
+     * @extends pc.EventHandler
      * @classdesc Container for all assets that are available to this application
      * @description Create an instance of an AssetRegistry.
      * Note: PlayCanvas scripts are provided with an AssetRegistry instance as 'app.assets'.
@@ -9,6 +10,8 @@ Object.assign(pc, function () {
      * @property {String} prefix A URL prefix that will be added to all asset loading requests.
      */
     var AssetRegistry = function (loader) {
+        pc.EventHandler.call(this);
+
         this._loader = loader;
 
         this._assets = []; // list of all assets
@@ -18,9 +21,9 @@ Object.assign(pc, function () {
         this._urls = {}; // index for looking up assets by url
 
         this.prefix = null;
-
-        Object.assign(this, pc.events);
     };
+    AssetRegistry.prototype = Object.create(pc.EventHandler.prototype);
+    AssetRegistry.prototype.constructor = AssetRegistry;
 
     /**
      * @event
@@ -221,6 +224,7 @@ Object.assign(pc, function () {
          */
         remove: function (asset) {
             var idx = this._cache[asset.id];
+            var url = asset.file ? asset.file.url : null;
 
             if (idx !== undefined) {
                 // remove from list
@@ -232,6 +236,9 @@ Object.assign(pc, function () {
                 // name cache needs to be completely rebuilt
                 this._names = {};
 
+                // urls cache needs to be completely rebuilt
+                this._urls = [];
+
                 // update id cache and rebuild name cache
                 for (var i = 0, l = this._assets.length; i < l; i++) {
                     var a = this._assets[i];
@@ -241,11 +248,11 @@ Object.assign(pc, function () {
                         this._names[a.name] = [];
                     }
                     this._names[a.name].push(i);
-                }
 
-                var url = asset.file ? asset.file.url : null;
-                if (url)
-                    delete this._urls[url];
+                    if (a.file) {
+                        this._urls[a.file.url] = i;
+                    }
+                }
 
                 // tags cache
                 this._tags.removeItem(asset);
@@ -435,7 +442,7 @@ Object.assign(pc, function () {
          * if you are not integrated with the PlayCanvas Editor
          * @param {String} url The url to load
          * @param {String} type The type of asset to load
-         * @param {Function} callback Function called when asset is loaded, passed (err, asset), where err is null if no errors were encountered
+         * @param {pc.callbacks.LoadAsset} callback Function called when asset is loaded, passed (err, asset), where err is null if no errors were encountered
          * @example
          * app.assets.loadFromUrl("../path/to/texture.jpg", "texture", function (err, asset) {
          *     var texture = asset.resource;
@@ -463,7 +470,17 @@ Object.assign(pc, function () {
             }
 
             asset.once("load", function (loadedAsset) {
-                callback(null, loadedAsset);
+                if (type === 'material') {
+                    self._loadTextures([loadedAsset], function (err, textures) {
+                        if (err) {
+                            callback(err);
+                        } else {
+                            callback(null, loadedAsset);
+                        }
+                    });
+                } else {
+                    callback(null, loadedAsset);
+                }
             });
             asset.once("error", function (err) {
                 callback(err);
@@ -479,7 +496,6 @@ Object.assign(pc, function () {
             var dir = pc.path.getDirectory(url);
             var basename = pc.path.getBasename(url);
             var ext = pc.path.getExtension(url);
-
 
             var _loadAsset = function (assetToLoad) {
                 asset.once("load", function (loadedAsset) {
@@ -515,6 +531,15 @@ Object.assign(pc, function () {
 
         // private method used for engine-only loading of model data
         _loadMaterials: function (dir, mapping, callback) {
+            if (dir) {
+                // dir is generated from a call to pc.path.getDirectory which never returns
+                // a path ending in a forward slash so add one here
+                dir += '/';
+                if (this.prefix && dir.startsWith(this.prefix)) {
+                    dir = dir.slice(this.prefix.length);
+                }
+            }
+
             var self = this;
             var i;
             var count = mapping.mapping.length;
@@ -540,41 +565,55 @@ Object.assign(pc, function () {
             for (i = 0; i < mapping.mapping.length; i++) {
                 var path = mapping.mapping[i].path;
                 if (path) {
-                    self.loadFromUrl(pc.path.join(dir, path), "material", onLoadAsset);
+                    path = pc.path.join(dir, path);
+                    self.loadFromUrl(path, "material", onLoadAsset);
                 } else {
                     count--;
                 }
             }
-
-
         },
 
         // private method used for engine-only loading of model data
-        _loadTextures: function (materials, callback) {
+        _loadTextures: function (materialAssets, callback) {
             var self = this;
-            var i, j;
+            var i;
             var used = {}; // prevent duplicate urls
             var urls = [];
             var textures = [];
             var count = 0;
-            for (i = 0; i < materials.length; i++) {
-                if (materials[i].data.parameters) {
-                    // old material format
-                    var params = materials[i].data.parameters;
-                    for (j = 0; j < params.length; j++) {
-                        if (params[j].type === "texture") {
-                            var url = materials[i].getFileUrl();
-                            var dir = pc.path.getDirectory(url);
-                            url = pc.path.join(dir, params[j].data);
-                            if (!used[url]) {
-                                used[url] = true;
-                                urls.push(url);
-                                count++;
-                            }
+            for (i = 0; i < materialAssets.length; i++) {
+                var materialData = materialAssets[i].data;
+
+                if (materialData.mappingFormat !== 'path') {
+                    console.warn('Skipping: ' + materialAssets[i].name + ', material files must be mappingFormat: "path" to be loaded from URL');
+                    continue;
+                }
+
+                var url = materialAssets[i].getFileUrl();
+                var dir = pc.path.getDirectory(url);
+                if (dir) {
+                    // pc.path.getDirectory never returns a path ending in a forward slash so add one
+                    dir += '/';
+
+                    if (this.prefix && dir.startsWith(this.prefix)) {
+                        dir = dir.slice(this.prefix.length);
+                    }
+                }
+
+                var textureUrl;
+
+                for (var pi = 0; pi < pc.StandardMaterial.TEXTURE_PARAMETERS.length; pi++) {
+                    var paramName = pc.StandardMaterial.TEXTURE_PARAMETERS[pi];
+
+                    if (materialData[paramName]) {
+                        var texturePath = materialData[paramName];
+                        textureUrl = pc.path.join(dir, texturePath);
+                        if (!used[textureUrl]) {
+                            used[textureUrl] = true;
+                            urls.push(textureUrl);
+                            count++;
                         }
                     }
-                } else {
-                    console.warn("Update material asset loader to support new material format");
                 }
             }
 
@@ -666,7 +705,7 @@ Object.assign(pc, function () {
          * @function
          * @name pc.AssetRegistry#filter
          * @description Return all Assets that satisfy filter callback
-         * @param {Function} callback The callback function that is used to filter assets, return `true` to include asset to result list
+         * @param {pc.callbacks.FilterAsset} callback The callback function that is used to filter assets, return `true` to include asset to result list
          * @returns {pc.Asset[]} A list of all Assets found
          * @example
          * var assets = app.assets.filter(function(asset) {

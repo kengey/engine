@@ -153,11 +153,12 @@ Object.assign(pc, function () {
      * This function will receive camera index as the only argument. You can get the actual camera being used by looking up {@link pc.LayerComposition#cameras} with this index.
      * @property {Function} onDrawCall Custom function that is called before every mesh instance in this layer is rendered.
      * It is not recommended to set this function when rendering many objects every frame due to performance reasons.
-     * @property {Function} id A unique ID of the layer.
+     * @property {Number} id A unique ID of the layer.
      * Layer IDs are stored inside {@link pc.ModelComponent#layers}, {@link pc.CameraComponent#layers}, {@link pc.LightComponent#layers} and {@link pc.ElementComponent#layers} instead of names.
      * Can be used in {@link pc.LayerComposition#getLayerById}.
      */
     var Layer = function (options) {
+        options = options || {};
 
         if (options.id !== undefined) {
             this.id = options.id;
@@ -186,8 +187,8 @@ Object.assign(pc, function () {
         this._clearDepthBuffer = options.clearDepthBuffer === undefined ? false : options.clearDepthBuffer;
         this._clearStencilBuffer = options.clearStencilBuffer === undefined ? false : options.clearStencilBuffer;
         this._clearOptions = {
-            color: this._clearColor.data,
-            depth: 1.0,
+            color: [this._clearColor.r, this._clearColor.g, this._clearColor.b, this._clearColor.a],
+            depth: 1,
             stencil: 0,
             flags: (this._clearColorBuffer ? pc.CLEARFLAG_COLOR : 0) | (this._clearDepthBuffer ? pc.CLEARFLAG_DEPTH : 0) | (this._clearStencilBuffer ? pc.CLEARFLAG_STENCIL : 0)
         };
@@ -373,7 +374,7 @@ Object.assign(pc, function () {
      * @function
      * @name pc.Layer#addMeshInstances
      * @description Adds an array of mesh instances to this layer.
-     * @param {Array} meshInstances Array of {@link pc.MeshInstance}.
+     * @param {pc.MeshInstance[]} meshInstances Array of {@link pc.MeshInstance}.
      * @param {Boolean} [skipShadowCasters] Set it to true if you don't want these mesh instances to cast shadows in this layer.
      */
     Layer.prototype.addMeshInstances = function (meshInstances, skipShadowCasters) {
@@ -406,7 +407,7 @@ Object.assign(pc, function () {
      * @function
      * @name pc.Layer#removeMeshInstances
      * @description Removes multiple mesh instances from this layer.
-     * @param {Array} meshInstances Array of {@link pc.MeshInstance}. If they were added to this layer, they will be removed.
+     * @param {pc.MeshInstance[]} meshInstances Array of {@link pc.MeshInstance}. If they were added to this layer, they will be removed.
      * @param {Boolean} [skipShadowCasters] Set it to true if you want to still cast shadows from removed mesh instances or if they never did cast shadows before.
      */
     Layer.prototype.removeMeshInstances = function (meshInstances, skipShadowCasters) {
@@ -530,7 +531,7 @@ Object.assign(pc, function () {
      * @function
      * @name pc.Layer#addShadowCasters
      * @description Adds an array of mesh instances to this layer, but only as shadow casters (they will not be rendered anywhere, but only cast shadows on other objects).
-     * @param {Array} meshInstances Array of {@link pc.MeshInstance}.
+     * @param {pc.MeshInstance[]} meshInstances Array of {@link pc.MeshInstance}.
      */
     Layer.prototype.addShadowCasters = function (meshInstances) {
         var m;
@@ -547,7 +548,7 @@ Object.assign(pc, function () {
      * @function
      * @name pc.Layer#removeShadowCasters
      * @description Removes multiple mesh instances from the shadow casters list of this layer, meaning they will stop casting shadows.
-     * @param {Array} meshInstances Array of {@link pc.MeshInstance}. If they were added to this layer, they will be removed.
+     * @param {pc.MeshInstance[]} meshInstances Array of {@link pc.MeshInstance}. If they were added to this layer, they will be removed.
      */
     Layer.prototype.removeShadowCasters = function (meshInstances) {
         var id;
@@ -600,7 +601,7 @@ Object.assign(pc, function () {
             this.cameras.sort(sortCameras);
             var str = "";
             for (var i = 0; i < this.cameras.length; i++) {
-                str += this.cameras[i].entity._guid;
+                str += this.cameras[i].entity.getGuid();
             }
             this._cameraHash = pc.hashCode(str);
         } else {
@@ -659,12 +660,12 @@ Object.assign(pc, function () {
         for (i = 0; i < drawCallsCount; i++) {
             drawCall = drawCalls[i];
             if (drawCall.command) continue;
-            if (drawCall.layer <= pc.scene.LAYER_FX) continue; // Only alpha sort mesh instances in the main world (backwards comp)
-            meshPos = drawCall.aabb.center.data;
-            tempx = meshPos[0] - camPos[0];
-            tempy = meshPos[1] - camPos[1];
-            tempz = meshPos[2] - camPos[2];
-            drawCall.zdist = tempx * camFwd[0] + tempy * camFwd[1] + tempz * camFwd[2];
+            if (drawCall.layer <= pc.LAYER_FX) continue; // Only alpha sort mesh instances in the main world (backwards comp)
+            meshPos = drawCall.aabb.center;
+            tempx = meshPos.x - camPos.x;
+            tempy = meshPos.y - camPos.y;
+            tempz = meshPos.z - camPos.z;
+            drawCall.zdist = tempx * camFwd.x + tempy * camFwd.y + tempz * camFwd.z;
         }
     };
 
@@ -676,18 +677,23 @@ Object.assign(pc, function () {
         var visible = transparent ? objects.visibleTransparent[cameraPass] : objects.visibleOpaque[cameraPass];
 
         if (sortMode === pc.SORTMODE_CUSTOM) {
-            sortPos = cameraNode.getPosition().data;
-            sortDir = cameraNode.forward.data;
+            sortPos = cameraNode.getPosition();
+            sortDir = cameraNode.forward;
             if (this.customCalculateSortValues) {
                 this.customCalculateSortValues(visible.list, visible.length, sortPos, sortDir);
             }
+
+            if (visible.list.length !== visible.length) {
+                visible.list.length = visible.length;
+            }
+
             if (this.customSortCallback) {
                 visible.list.sort(this.customSortCallback);
             }
         } else {
             if (sortMode === pc.SORTMODE_BACK2FRONT || sortMode === pc.SORTMODE_FRONT2BACK) {
-                sortPos = cameraNode.getPosition().data;
-                sortDir = cameraNode.forward.data;
+                sortPos = cameraNode.getPosition();
+                sortDir = cameraNode.forward;
                 this._calculateSortDistances(visible.list, visible.length, sortPos, sortDir);
             }
 

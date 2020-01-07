@@ -5,20 +5,25 @@ Object.assign(pc, function () {
     var scaleCompensateRot2 = new pc.Quat();
     var scaleCompensateScale = new pc.Vec3();
     var scaleCompensateScaleForParent = new pc.Vec3();
+    var tmpMat4 = new pc.Mat4();
+    var tmpQuat = new pc.Quat();
 
     /**
      * @constructor
      * @name pc.GraphNode
+     * @extends pc.EventHandler
      * @classdesc A hierarchical scene node.
      * @param {String} [name] The non-unique name of the graph node, default is "Untitled".
      * @property {String} name The non-unique name of a graph node.
      * @property {pc.Tags} tags Interface for tagging graph nodes. Tag based searches can be performed using the {@link pc.GraphNode#findByTag} function.
      */
     var GraphNode = function GraphNode(name) {
+        pc.EventHandler.call(this);
+
         this.name = typeof name === "string" ? name : "Untitled"; // Non-unique human readable name
         this.tags = new pc.Tags(this);
 
-        this._labels = { };
+        this._labels = {};
 
         // Local-space properties of transform (only first 3 are settable by the user)
         this.localPosition = new pc.Vec3(0, 0, 0);
@@ -30,10 +35,16 @@ Object.assign(pc, function () {
         this.position = new pc.Vec3(0, 0, 0);
         this.rotation = new pc.Quat(0, 0, 0, 1);
         this.eulerAngles = new pc.Vec3(0, 0, 0);
+        this._scale = null;
 
         this.localTransform = new pc.Mat4();
         this._dirtyLocal = false;
         this._aabbVer = 0;
+
+        // _frozen flag marks the node to ignore hierarchy sync etirely (including children nodes)
+        // engine code automatically freezes and unfreezes objects whenever required
+        // segrigating dynamic and stationary nodes into subhierarchies allows to reduce sync time significantly
+        this._frozen = false;
 
         this.worldTransform = new pc.Mat4();
         this._dirtyWorld = false;
@@ -41,9 +52,9 @@ Object.assign(pc, function () {
         this.normalMatrix = new pc.Mat3();
         this._dirtyNormal = true;
 
-        this._right = new pc.Vec3();
-        this._up = new pc.Vec3();
-        this._forward = new pc.Vec3();
+        this._right = null;
+        this._up = null;
+        this._forward = null;
 
         this._parent = null;
         this._children = [];
@@ -54,6 +65,8 @@ Object.assign(pc, function () {
 
         this.scaleCompensation = false;
     };
+    GraphNode.prototype = Object.create(pc.EventHandler.prototype);
+    GraphNode.prototype.constructor = GraphNode;
 
     /**
      * @readonly
@@ -63,6 +76,9 @@ Object.assign(pc, function () {
      */
     Object.defineProperty(GraphNode.prototype, 'right', {
         get: function () {
+            if (!this._right) {
+                this._right = new pc.Vec3();
+            }
             return this.getWorldTransform().getX(this._right).normalize();
         }
     });
@@ -75,6 +91,9 @@ Object.assign(pc, function () {
      */
     Object.defineProperty(GraphNode.prototype, 'up', {
         get: function () {
+            if (!this._up) {
+                this._up = new pc.Vec3();
+            }
             return this.getWorldTransform().getY(this._up).normalize();
         }
     });
@@ -87,6 +106,9 @@ Object.assign(pc, function () {
      */
     Object.defineProperty(GraphNode.prototype, 'forward', {
         get: function () {
+            if (!this._forward) {
+                this._forward = new pc.Vec3();
+            }
             return this.getWorldTransform().getZ(this._forward).normalize().scale(-1);
         }
     });
@@ -125,6 +147,31 @@ Object.assign(pc, function () {
     Object.defineProperty(GraphNode.prototype, 'parent', {
         get: function () {
             return this._parent;
+        }
+    });
+
+    /**
+     * @readonly
+     * @name pc.GraphNode#path
+     * @type pc.GraphNode
+     * @description A read-only property to get the path of the graph node relative to
+     * the root of the hierarchy
+     */
+    Object.defineProperty(GraphNode.prototype, 'path', {
+        get: function () {
+            var parent = this._parent;
+            if (parent) {
+                var path = this.name;
+                var format = "{0}/{1}";
+
+                while (parent && parent._parent) {
+                    path = pc.string.format(format, parent.name, path);
+                    parent = parent._parent;
+                }
+
+                return path;
+            }
+            return '';
         }
     });
 
@@ -192,6 +239,8 @@ Object.assign(pc, function () {
         _onHierarchyStateChanged: function (enabled) {
             // Override in derived classes
             this._enabledInHierarchy = enabled;
+            if (enabled && !this._frozen)
+                this._unfreezeParentToRoot();
         },
 
         _cloneInternal: function (clone) {
@@ -238,7 +287,7 @@ Object.assign(pc, function () {
          * @function
          * @name pc.GraphNode#find
          * @description Search the graph node and all of its descendants for the nodes that satisfy some search criteria.
-         * @param {Function|String} attr This can either be a function or a string. If it's a function, it is executed
+         * @param {pc.callbacks.FindNode|String} attr This can either be a function or a string. If it's a function, it is executed
          * for each descendant node to test if node satisfies the search logic. Returning true from the function will
          * include the node into the results. If it's a string then it represents the name of a field or a method of the
          * node. If this is the name of a field then the value passed as the second argument will be checked for equality.
@@ -257,17 +306,18 @@ Object.assign(pc, function () {
          * var entities = parent.find('name', 'Test');
          */
         find: function (attr, value) {
-            var results = [];
+            var result, results = [];
             var len = this._children.length;
             var i, descendants;
 
             if (attr instanceof Function) {
                 var fn = attr;
 
-                for (i = 0; i < len; i++) {
-                    if (fn(this._children[i]))
-                        results.push(this._children[i]);
+                result = fn(this);
+                if (result)
+                    results.push(this);
 
+                for (i = 0; i < len; i++) {
                     descendants = this._children[i].find(fn);
                     if (descendants.length)
                         results = results.concat(descendants);
@@ -299,7 +349,7 @@ Object.assign(pc, function () {
          * @function
          * @name pc.GraphNode#findOne
          * @description Search the graph node and all of its descendants for the first node that satisfies some search criteria.
-         * @param {Function|String} attr This can either be a function or a string. If it's a function, it is executed
+         * @param {pc.callbacks.FindNode|String} attr This can either be a function or a string. If it's a function, it is executed
          * for each descendant node to test if node satisfies the search logic. Returning true from the function will
          * result in that node being returned from findOne. If it's a string then it represents the name of a field or a method of the
          * node. If this is the name of a field then the value passed as the second argument will be checked for equality.
@@ -332,7 +382,7 @@ Object.assign(pc, function () {
                 for (i = 0; i < len; i++) {
                     result = this._children[i].findOne(fn);
                     if (result)
-                        return this._children[i];
+                        return result;
                 }
             } else {
                 var testValue;
@@ -458,65 +508,23 @@ Object.assign(pc, function () {
 
         /**
          * @function
-         * @name  pc.GraphNode#getPath
-         * @description Gets the path of the entity relative to the root of the hierarchy
-         * @returns {String} The path
+         * @name pc.GraphNode#forEach
+         * @description Executes a provided function once on this graph node and all of its descendants.
+         * @param {pc.callbacks.ForEach} callback The function to execute on the graph node and each descendant.
+         * @param {Object} [thisArg] Optional value to use as this when executing callback function.
          * @example
-         * var path = this.entity.getPath();
+         * // Log the path and name of each node in descendant tree starting with "parent"
+         * parent.forEach(function (node) {
+         *     console.log(node.path + "/" + node.name);
+         * });
          */
-        getPath: function () {
-            var parent = this._parent;
-            if (parent) {
-                var path = this.name;
-                var format = "{0}/{1}";
+        forEach: function (callback, thisArg) {
+            callback.call(thisArg, this);
 
-                while (parent && parent._parent) {
-                    path = pc.string.format(format, parent.name, path);
-                    parent = parent._parent;
-                }
-
-                return path;
+            var children = this._children;
+            for (var i = 0; i < children.length; i++) {
+                children[i].forEach(callback, thisArg);
             }
-            return '';
-
-        },
-
-
-        /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#getRoot
-         * @description Get the highest ancestor node from this graph node.
-         * @returns {pc.GraphNode} The root node of the hierarchy to which this node belongs.
-         * @example
-         * var root = this.entity.getRoot();
-         */
-        getRoot: function () {
-            var parent = this._parent;
-            if (!parent) {
-                return this;
-            }
-
-            while (parent._parent) {
-                parent = parent._parent;
-            }
-
-            return parent;
-        },
-
-        /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#getParent
-         * @description Get the parent GraphNode
-         * @returns {pc.GraphNode} The parent node
-         * @example
-         * var parent = this.entity.getParent();
-         */
-        getParent: function () {
-            return this._parent;
         },
 
         /**
@@ -554,23 +562,6 @@ Object.assign(pc, function () {
          */
         isAncestorOf: function (node) {
             return node.isDescendantOf(this);
-        },
-
-        /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#getChildren
-         * @description Get the children of this graph node.
-         * @returns {pc.GraphNode[]} The child array of this node.
-         * @example
-         * var children = this.entity.getChildren();
-         * for (i = 0; i < children.length; i++) {
-         * // children[i]
-         * }
-         */
-        getChildren: function () {
-            return this._children;
         },
 
         /**
@@ -673,23 +664,6 @@ Object.assign(pc, function () {
         },
 
         /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#getName
-         * @description Get the human-readable name for this graph node. Note the name
-         * is not guaranteed to be unique. For Entities, this is the name that is set in the PlayCanvas Editor.
-         * @returns {String} The name of the node.
-         * @example
-         * if (this.entity.getName() === "My Entity") {
-         *     console.log("My Entity Found");
-         * }
-         */
-        getName: function () {
-            return this.name;
-        },
-
-        /**
          * @function
          * @name pc.GraphNode#getPosition
          * @description Get the world space position for the specified GraphNode. The
@@ -722,6 +696,26 @@ Object.assign(pc, function () {
         },
 
         /**
+         * @private
+         * @function
+         * @name pc.GraphNode#getScale
+         * @description Get the world space scale for the specified GraphNode. The returned value
+         * will only be correct for graph nodes that have a non-skewed world transform (a skew can
+         * be introduced by the compounding of rotations and scales higher in the graph node
+         * hierarchy). The value returned by this function should be considered read-only. Note
+         * that it is not possible to set the world space scale of a graph node directly.
+         * @returns {pc.Vec3} The world space scale of the graph node.
+         * @example
+         * var scale = this.entity.getScale();
+         */
+        getScale: function () {
+            if (!this._scale) {
+                this._scale = new pc.Vec3();
+            }
+            return this.getWorldTransform().getScale(this._scale);
+        },
+
+        /**
          * @function
          * @name pc.GraphNode#getWorldTransform
          * @description Get the world transformation matrix for this graph node.
@@ -746,10 +740,11 @@ Object.assign(pc, function () {
          * @name pc.GraphNode#reparent
          * @description Remove graph node from current parent and add as child to new parent
          * @param {pc.GraphNode} parent New parent to attach graph node to
-         * @param {Number} index (optional) The child index where the child node should be placed.
+         * @param {Number} [index] The child index where the child node should be placed.
          */
         reparent: function (parent, index) {
             var current = this._parent;
+
             if (current)
                 current.removeChild(this);
 
@@ -783,13 +778,13 @@ Object.assign(pc, function () {
          */
         setLocalEulerAngles: function (x, y, z) {
             if (x instanceof pc.Vec3) {
-                this.localRotation.setFromEulerAngles(x.data[0], x.data[1], x.data[2]);
+                this.localRotation.setFromEulerAngles(x.x, x.y, x.z);
             } else {
                 this.localRotation.setFromEulerAngles(x, y, z);
             }
 
             if (!this._dirtyLocal)
-                this._dirtify(true);
+                this._dirtifyLocal();
         },
 
         /**
@@ -818,7 +813,7 @@ Object.assign(pc, function () {
             }
 
             if (!this._dirtyLocal)
-                this._dirtify(true);
+                this._dirtifyLocal();
         },
 
         /**
@@ -848,7 +843,7 @@ Object.assign(pc, function () {
             }
 
             if (!this._dirtyLocal)
-                this._dirtify(true);
+                this._dirtifyLocal();
         },
 
         /**
@@ -877,42 +872,40 @@ Object.assign(pc, function () {
             }
 
             if (!this._dirtyLocal)
-                this._dirtify(true);
+                this._dirtifyLocal();
         },
 
-        /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#setName
-         * @description Sets the non-unique name for this graph node.
-         * @param {String} name The name for the node.
-         * @example
-         * this.entity.setName("My Entity");
-         */
-        setName: function (name) {
-            this.name = name;
-        },
-
-        _dirtify: function (local) {
-            if ((!local || (local && this._dirtyLocal)) && this._dirtyWorld)
-                return;
-
-            if (local)
+        _dirtifyLocal: function () {
+            if (!this._dirtyLocal) {
                 this._dirtyLocal = true;
+                if (!this._dirtyWorld)
+                    this._dirtifyWorld();
+            }
+        },
 
+        _unfreezeParentToRoot: function () {
+            var p = this._parent;
+            while (p) {
+                p._frozen = false;
+                p = p._parent;
+            }
+        },
+
+        _dirtifyWorld: function () {
+            if (!this._dirtyWorld)
+                this._unfreezeParentToRoot();
+            this._dirtifyWorldInternal();
+        },
+
+        _dirtifyWorldInternal: function () {
             if (!this._dirtyWorld) {
+                this._frozen = false;
                 this._dirtyWorld = true;
-
-                var i = this._children.length;
-                while (i--) {
-                    if (this._children[i]._dirtyWorld)
-                        continue;
-
-                    this._children[i]._dirtify();
+                for (var i = 0; i < this._children.length; i++) {
+                    if (!this._children[i]._dirtyWorld)
+                        this._children[i]._dirtifyWorldInternal();
                 }
             }
-
             this._dirtyNormal = true;
             this._aabbVer++;
         },
@@ -954,7 +947,7 @@ Object.assign(pc, function () {
                 }
 
                 if (!this._dirtyLocal)
-                    this._dirtify(true);
+                    this._dirtifyLocal();
             };
         }(),
 
@@ -997,7 +990,7 @@ Object.assign(pc, function () {
                 }
 
                 if (!this._dirtyLocal)
-                    this._dirtify(true);
+                    this._dirtifyLocal();
             };
         }(),
 
@@ -1025,7 +1018,7 @@ Object.assign(pc, function () {
 
             return function (x, y, z) {
                 if (x instanceof pc.Vec3) {
-                    this.localRotation.setFromEulerAngles(x.data[0], x.data[1], x.data[2]);
+                    this.localRotation.setFromEulerAngles(x.x, x.y, x.z);
                 } else {
                     this.localRotation.setFromEulerAngles(x, y, z);
                 }
@@ -1037,7 +1030,7 @@ Object.assign(pc, function () {
                 }
 
                 if (!this._dirtyLocal)
-                    this._dirtify(true);
+                    this._dirtifyLocal();
             };
         }(),
 
@@ -1054,11 +1047,19 @@ Object.assign(pc, function () {
             if (node._parent !== null)
                 throw new Error("GraphNode is already parented");
 
+            // #ifdef DEBUG
+            this._debugInsertChild(node);
+            // #endif
+
             this._children.push(node);
             this._onInsertChild(node);
         },
 
         addChildAndSaveTransform: function (node) {
+            // #ifdef DEBUG
+            this._debugInsertChild(node);
+            // #endif
+
             var wPos = node.getPosition();
             var wRot = node.getRotation();
 
@@ -1066,16 +1067,10 @@ Object.assign(pc, function () {
             if (current)
                 current.removeChild(node);
 
-            if (this.tmpMat4 === undefined) {
-                this.tmpMat4 = new pc.Mat4();
-                this.tmpQuat = new pc.Quat();
-            }
-
-            node.setPosition(this.tmpMat4.copy(this.worldTransform).invert().transformPoint(wPos));
-            node.setRotation(this.tmpQuat.copy(this.getRotation()).invert().mul(wRot));
+            node.setPosition(tmpMat4.copy(this.worldTransform).invert().transformPoint(wPos));
+            node.setRotation(tmpQuat.copy(this.getRotation()).invert().mul(wRot));
 
             this._children.push(node);
-
             this._onInsertChild(node);
         },
 
@@ -1093,9 +1088,23 @@ Object.assign(pc, function () {
             if (node._parent !== null)
                 throw new Error("GraphNode is already parented");
 
+            // #ifdef DEBUG
+            this._debugInsertChild(node);
+            // #endif
+
             this._children.splice(index, 0, node);
             this._onInsertChild(node);
         },
+
+        // #ifdef DEBUG
+        _debugInsertChild: function (node) {
+            if (this === node)
+                throw new Error("GraphNode cannot be a child of itself");
+
+            if (this.isDescendantOf(node))
+                throw new Error("GraphNode cannot add an ancestor as a child");
+        },
+        // #endif
 
         _onInsertChild: function (node) {
             node._parent = this;
@@ -1117,7 +1126,10 @@ Object.assign(pc, function () {
             node._updateGraphDepth();
 
             // The child (plus subhierarchy) will need world transforms to be recalculated
-            node._dirtify();
+            node._dirtifyWorld();
+            // node might be already marked as dirty, in that case the whole chain stays frozen, so let's enforce unfreeze
+            if (this._frozen)
+                node._unfreezeParentToRoot();
 
             // alert an entity that it has been inserted
             if (node.fire) node.fire('insert', this);
@@ -1159,89 +1171,15 @@ Object.assign(pc, function () {
                     // Clear parent
                     child._parent = null;
 
+                    // alert child that it has been removed
+                    if (child.fire) child.fire('remove', this);
+
                     // alert the parent that it has had a child removed
                     if (this.fire) this.fire('childremove', child);
 
                     return;
                 }
             }
-        },
-
-        /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#addLabel
-         * @description Add a string label to this graph node, labels can be used to group
-         * and filter nodes. For example, the 'enemies' label could be applied to a group of NPCs
-         * who are enemies.
-         * @param {String} label The label to apply to this graph node.
-         */
-        addLabel: function (label) {
-            this._labels[label] = true;
-        },
-
-        /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#getLabels
-         * @description Get an array of all labels applied to this graph node.
-         * @returns {String[]} An array of all labels.
-         */
-        getLabels: function () {
-            return Object.keys(this._labels);
-        },
-
-        /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#hasLabel
-         * @description Test if a label has been applied to this graph node.
-         * @param {String} label The label to test for.
-         * @returns {Boolean} True if the label has been added to this GraphNode.
-         *
-         */
-        hasLabel: function (label) {
-            return !!this._labels[label];
-        },
-
-        /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#removeLabel
-         * @description Remove label from this graph node.
-         * @param {String} label The label to remove from this node.
-         */
-        removeLabel: function (label) {
-            delete this._labels[label];
-        },
-
-        /**
-         * @private
-         * @deprecated
-         * @function
-         * @name pc.GraphNode#findByLabel
-         * @description Find all graph nodes from the root and all descendants with the label.
-         * @param {String} label The label to search for.
-         * @param {pc.GraphNode[]} [results] An array to store the results in.
-         * @returns {pc.GraphNode[]} The array passed in or a new array of results.
-         */
-        findByLabel: function (label, results) {
-            var i, length = this._children.length;
-            results = results || [];
-
-            if (this.hasLabel(label)) {
-                results.push(this);
-            }
-
-            for (i = 0; i < length; ++i) {
-                results = this._children[i].findByLabel(label, results);
-            }
-
-            return results;
         },
 
         _sync: function () {
@@ -1313,8 +1251,13 @@ Object.assign(pc, function () {
             if (!this._enabled)
                 return;
 
-            if (this._dirtyLocal || this._dirtyWorld)
+            if (this._frozen)
+                return;
+            this._frozen = true;
+
+            if (this._dirtyLocal || this._dirtyWorld) {
                 this._sync();
+            }
 
             var children = this._children;
             for (var i = 0, len = children.length; i < len; i++) {
@@ -1449,7 +1392,7 @@ Object.assign(pc, function () {
                 this.localPosition.add(translation);
 
                 if (!this._dirtyLocal)
-                    this._dirtify(true);
+                    this._dirtifyLocal();
             };
         }(),
 
@@ -1477,7 +1420,7 @@ Object.assign(pc, function () {
 
             return function (x, y, z) {
                 if (x instanceof pc.Vec3) {
-                    quaternion.setFromEulerAngles(x.data[0], x.data[1], x.data[2]);
+                    quaternion.setFromEulerAngles(x.x, x.y, x.z);
                 } else {
                     quaternion.setFromEulerAngles(x, y, z);
                 }
@@ -1494,7 +1437,7 @@ Object.assign(pc, function () {
                 }
 
                 if (!this._dirtyLocal)
-                    this._dirtify(true);
+                    this._dirtifyLocal();
             };
         }(),
 
@@ -1521,7 +1464,7 @@ Object.assign(pc, function () {
 
             return function (x, y, z) {
                 if (x instanceof pc.Vec3) {
-                    quaternion.setFromEulerAngles(x.data[0], x.data[1], x.data[2]);
+                    quaternion.setFromEulerAngles(x.x, x.y, x.z);
                 } else {
                     quaternion.setFromEulerAngles(x, y, z);
                 }
@@ -1529,7 +1472,7 @@ Object.assign(pc, function () {
                 this.localRotation.mul(quaternion);
 
                 if (!this._dirtyLocal)
-                    this._dirtify(true);
+                    this._dirtifyLocal();
             };
         }()
     });

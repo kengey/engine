@@ -1,6 +1,7 @@
 Object.assign(pc, function () {
     /**
      * @private
+     * @constructor
      * @name pc.EntityReference
      * @description Helper class used for managing component properties that represent entity references.
      * @classdesc An EntityReference can be used in scenarios where a component has one or more properties that
@@ -168,8 +169,8 @@ Object.assign(pc, function () {
             this._parentComponent[onOrOff]('set_' + this._entityPropertyName, this._onSetEntity, this);
             this._parentComponent.system[onOrOff]('beforeremove', this._onParentComponentRemove, this);
 
-            pc.ComponentSystem[onOrOff]('postInitialize', this._onPostInitialize, this);
-            this._app.on('tools:sceneloaded', this._onSceneLoaded, this);
+            pc.ComponentSystem[onOrOff]('postinitialize', this._onPostInitialize, this);
+            this._app[onOrOff]('tools:sceneloaded', this._onSceneLoaded, this);
 
             // For any event listeners that relate to the gain/loss of a component, register
             // listeners that will forward the add/remove component events
@@ -220,8 +221,12 @@ Object.assign(pc, function () {
         },
 
         /**
-         * Must be called from the parent component's onEnable() method in order for entity
-         * references to be correctly resolved when {@link pc.Entity#clone} is called.
+         * @private
+         * @function
+         * @name pc.EntityReference#onParentComponentEnable
+         * @description Must be called from the parent component's onEnable() method in
+         * order for entity references to be correctly resolved when {@link pc.Entity#clone}
+         * is called.
          */
         onParentComponentEnable: function () {
             // When an entity is cloned via the JS API, we won't be able to resolve the
@@ -282,7 +287,7 @@ Object.assign(pc, function () {
         },
 
         _onComponentAdd: function (entity, component) {
-            var componentName = component.system.name;
+            var componentName = component.system.id;
 
             if (entity === this._entity) {
                 this._callGainOrLoseListener(componentName, this._gainListeners);
@@ -291,7 +296,7 @@ Object.assign(pc, function () {
         },
 
         _onComponentRemove: function (entity, component) {
-            var componentName = component.system.name;
+            var componentName = component.system.id;
 
             if (entity === this._entity) {
                 this._callGainOrLoseListener(componentName, this._loseListeners);
@@ -382,8 +387,11 @@ Object.assign(pc, function () {
         },
 
         /**
-         * Convenience method indicating whether the entity exists and has a component of the provided type.
-         *
+         * @private
+         * @function
+         * @name pc.EntityReference#hasComponent
+         * @description Convenience method indicating whether the entity exists and has a
+         * component of the provided type.
          * @param {String} componentName Name of the component.
          * @returns {Boolean} True if the entity exists and has a component of the provided type.
          */

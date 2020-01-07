@@ -2,6 +2,7 @@ Object.assign(pc, function () {
     /**
      * @constructor
      * @name pc.VrDisplay
+     * @extends pc.EventHandler
      * @classdesc Represents a single Display for VR content. This could be a Head Mounted display that can present content on a separate screen
      * or a phone which can display content full screen on the same screen. This object contains the native `navigator.VRDisplay` object
      * from the WebVR API.
@@ -17,6 +18,8 @@ Object.assign(pc, function () {
      * This can be used to determine what features are available on this display.
      */
     var VrDisplay = function (app, display) {
+        pc.EventHandler.call(this);
+
         var self = this;
 
         this._app = app;
@@ -95,9 +98,9 @@ Object.assign(pc, function () {
             }
         };
         window.addEventListener('vrdisplaypresentchange', self._presentChange, false);
-
-        pc.events.attach(this);
     };
+    VrDisplay.prototype = Object.create(pc.EventHandler.prototype);
+    VrDisplay.prototype.constructor = VrDisplay;
 
     Object.assign(VrDisplay.prototype, {
         /**
@@ -167,26 +170,26 @@ Object.assign(pc, function () {
                 view.copy(this.leftView);
                 view.invert();
                 this.leftViewInv.copy(view);
-                var pos = this.combinedPos.data;
-                pos[0] = this.leftPos.data[0] = view.data[12];
-                pos[1] = this.leftPos.data[1] = view.data[13];
-                pos[2] = this.leftPos.data[2] = view.data[14];
+                var pos = this.combinedPos;
+                pos.x = this.leftPos.x = view.data[12];
+                pos.y = this.leftPos.y = view.data[13];
+                pos.z = this.leftPos.z = view.data[14];
                 view.copy(this.rightView);
                 view.invert();
                 this.rightViewInv.copy(view);
-                var deltaX = pos[0] - view.data[12];
-                var deltaY = pos[1] - view.data[13];
-                var deltaZ = pos[2] - view.data[14];
+                var deltaX = pos.x - view.data[12];
+                var deltaY = pos.y - view.data[13];
+                var deltaZ = pos.z - view.data[14];
                 var dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
-                this.rightPos.data[0] = view.data[12];
-                this.rightPos.data[1] = view.data[13];
-                this.rightPos.data[2] = view.data[14];
-                pos[0] += view.data[12];
-                pos[1] += view.data[13];
-                pos[2] += view.data[14];
-                pos[0] *= 0.5; // middle pos
-                pos[1] *= 0.5;
-                pos[2] *= 0.5;
+                this.rightPos.x = view.data[12];
+                this.rightPos.y = view.data[13];
+                this.rightPos.z = view.data[14];
+                pos.x += view.data[12];
+                pos.y += view.data[13];
+                pos.z += view.data[14];
+                pos.x *= 0.5; // middle pos
+                pos.y *= 0.5;
+                pos.z *= 0.5;
                 var b = Math.PI * 0.5;
                 var c = maxFov * 0.5;
                 var a = Math.PI - (b + c);
@@ -194,9 +197,9 @@ Object.assign(pc, function () {
                 var fwdX = view.data[8];
                 var fwdY = view.data[9];
                 var fwdZ = view.data[10];
-                view.data[12] = pos[0] + fwdX * offset; // our forward goes backwards so + instead of -
-                view.data[13] = pos[1] + fwdY * offset;
-                view.data[14] = pos[2] + fwdZ * offset;
+                view.data[12] = pos.x + fwdX * offset; // our forward goes backwards so + instead of -
+                view.data[13] = pos.y + fwdY * offset;
+                view.data[14] = pos.z + fwdZ * offset;
                 this.combinedViewInv.copy(view);
                 view.invert();
 
@@ -213,7 +216,7 @@ Object.assign(pc, function () {
          * @function
          * @name pc.VrDisplay#requestPresent
          * @description Try to present full screen VR content on this display
-         * @param {Function} callback Called when the request is completed. Callback takes a single argument (err) that is the error message return
+         * @param {pc.callbacks.VrDisplay} callback Called when the request is completed. Callback takes a single argument (err) that is the error message return
          * if presenting fails, or null if the call succeeds. Usually called by {@link pc.CameraComponent#enterVr}.
          */
         requestPresent: function (callback) {
@@ -238,7 +241,7 @@ Object.assign(pc, function () {
          * @function
          * @name pc.VrDisplay#exitPresent
          * @description Try to stop presenting VR content on this display
-         * @param {Function} callback Called when the request is completed. Callback takes a single argument (err) that is the error message return
+         * @param {pc.callbacks.VrDisplay} callback Called when the request is completed. Callback takes a single argument (err) that is the error message return
          * if presenting fails, or null if the call succeeds. Usually called by {@link pc.CameraComponent#exitVr}.
          */
         exitPresent: function (callback) {
@@ -262,7 +265,7 @@ Object.assign(pc, function () {
          * @function
          * @name pc.VrDisplay#requestAnimationFrame
          * @description Used in the main application loop instead of the regular `window.requestAnimationFrame`. Usually only called from inside {@link pc.Application}
-         * @param {Function} fn Function called when it is time to update the frame.
+         * @param {pc.callbacks.VrFrame} fn Function called when it is time to update the frame.
          */
         requestAnimationFrame: function (fn) {
             if (this.display) this.display.requestAnimationFrame(fn);

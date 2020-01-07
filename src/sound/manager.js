@@ -26,6 +26,7 @@ Object.assign(pc, function () {
     /**
      * @constructor
      * @name pc.SoundManager
+     * @extends pc.EventHandler
      * @classdesc The SoundManager is used to load and play audio. As well as apply system-wide settings
      * like global volume, suspend and resume.
      * @description Creates a new sound manager.
@@ -34,6 +35,8 @@ Object.assign(pc, function () {
      * @property {Number} volume Global volume for the manager. All {@link pc.SoundInstance}s will scale their volume with this volume. Valid between [0, 1].
      */
     var SoundManager = function (options) {
+        pc.EventHandler.call(this);
+
         if (hasAudioContext() || options.forceWebAudioApi) {
             if (typeof AudioContext !== 'undefined') {
                 this.context = new AudioContext();
@@ -43,6 +46,17 @@ Object.assign(pc, function () {
 
             if (this.context) {
                 var context = this.context;
+
+                // resume AudioContext on user interaction because of new Chrome autoplay policy
+                this.resumeContext = function () {
+                    this.context.resume();
+                    window.removeEventListener('mousedown', this.resumeContext);
+                    window.removeEventListener('touchend', this.resumeContext);
+                }.bind(this);
+
+                window.addEventListener('mousedown', this.resumeContext);
+                window.addEventListener('touchend', this.resumeContext);
+
                 // iOS only starts sound as a response to user interaction
                 if (pc.platform.ios) {
                     // Play an inaudible sound when the user touches the screen
@@ -73,15 +87,14 @@ Object.assign(pc, function () {
 
         this._volume = 1;
         this.suspended = false;
-
-        pc.events.attach(this);
     };
+    SoundManager.prototype = Object.create(pc.EventHandler.prototype);
+    SoundManager.prototype.constructor = SoundManager;
 
     SoundManager.hasAudio = hasAudio;
     SoundManager.hasAudioContext = hasAudioContext;
 
     Object.assign(SoundManager.prototype, {
-
         suspend: function  () {
             this.suspended = true;
             this.fire('suspend');
@@ -93,6 +106,9 @@ Object.assign(pc, function () {
         },
 
         destroy: function () {
+            window.removeEventListener('mousedown', this.resumeContext);
+            window.removeEventListener('touchend', this.resumeContext);
+
             this.fire('destroy');
             if (this.context && this.context.close) {
                 this.context.close();

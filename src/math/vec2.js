@@ -6,21 +6,19 @@ Object.assign(pc, (function () {
      * @name pc.Vec2
      * @classdesc A 2-dimensional vector.
      * @description Creates a new Vec2 object.
-     * @param {Number} [x] The x value. If x is an array of length 2, the array will be used to populate all components.
+     * @param {Number|Number[]} [x] The x value. If x is an array of length 2, the array will be used to populate all components.
      * @param {Number} [y] The y value.
      * @example
      * var v = new pc.Vec2(1, 2);
      */
     var Vec2 = function (x, y) {
         if (x && x.length === 2) {
-            this.data = new Float32Array(x);
-            return;
+            this.x = x[0];
+            this.y = x[1];
+        } else {
+            this.x = x || 0;
+            this.y = y || 0;
         }
-
-        this.data = new Float32Array(2);
-
-        this.data[0] = x || 0;
-        this.data[1] = y || 0;
     };
 
     Object.assign(Vec2.prototype, {
@@ -40,11 +38,8 @@ Object.assign(pc, (function () {
          * console.log("The result of the addition is: " + a.toString());
          */
         add: function (rhs) {
-            var a = this.data,
-                b = rhs.data;
-
-            a[0] += b[0];
-            a[1] += b[1];
+            this.x += rhs.x;
+            this.y += rhs.y;
 
             return this;
         },
@@ -67,12 +62,8 @@ Object.assign(pc, (function () {
          * console.log("The result of the addition is: " + r.toString());
          */
         add2: function (lhs, rhs) {
-            var a = lhs.data,
-                b = rhs.data,
-                r = this.data;
-
-            r[0] = a[0] + b[0];
-            r[1] = a[1] + b[1];
+            this.x = lhs.x + rhs.x;
+            this.y = lhs.y + rhs.y;
 
             return this;
         },
@@ -106,13 +97,28 @@ Object.assign(pc, (function () {
          * console.log("The two vectors are " + (dst.equals(src) ? "equal" : "different"));
          */
         copy: function (rhs) {
-            var a = this.data,
-                b = rhs.data;
-
-            a[0] = b[0];
-            a[1] = b[1];
+            this.x = rhs.x;
+            this.y = rhs.y;
 
             return this;
+        },
+
+        /**
+         * @function
+         * @name pc.Vec2#distance
+         * @description Returns the distance between the two specified 2-dimensional vectors.
+         * @param {pc.Vec2} rhs The second 2-dimensional vector to test.
+         * @returns {Number} The distance between the two vectors.
+         * @example
+         * var v1 = new pc.Vec2(5, 10);
+         * var v2 = new pc.Vec2(10, 20);
+         * var d = v1.distance(v2);
+         * console.log("The between v1 and v2 is: " + d);
+         */
+        distance: function (rhs) {
+            var x = this.x - rhs.x;
+            var y = this.y - rhs.y;
+            return Math.sqrt(x * x + y * y);
         },
 
         /**
@@ -128,10 +134,7 @@ Object.assign(pc, (function () {
          * console.log("The result of the dot product is: " + v1dotv2);
          */
         dot: function (rhs) {
-            var a = this.data,
-                b = rhs.data;
-
-            return a[0] * b[0] + a[1] * b[1];
+            return this.x * rhs.x + this.y * rhs.y;
         },
 
         /**
@@ -146,10 +149,7 @@ Object.assign(pc, (function () {
          * console.log("The two vectors are " + (a.equals(b) ? "equal" : "different"));
          */
         equals: function (rhs) {
-            var a = this.data,
-                b = rhs.data;
-
-            return a[0] === b[0] && a[1] === b[1];
+            return this.x === rhs.x && this.y === rhs.y;
         },
 
         /**
@@ -164,9 +164,7 @@ Object.assign(pc, (function () {
          * console.log("The length of the vector is: " + len);
          */
         length: function () {
-            var v = this.data;
-
-            return Math.sqrt(v[0] * v[0] + v[1] * v[1]);
+            return Math.sqrt(this.x * this.x + this.y * this.y);
         },
 
         /**
@@ -181,9 +179,7 @@ Object.assign(pc, (function () {
          * console.log("The length squared of the vector is: " + len);
          */
         lengthSq: function () {
-            var v = this.data;
-
-            return v[0] * v[0] + v[1] * v[1];
+            return this.x * this.x + this.y * this.y;
         },
 
         /**
@@ -206,12 +202,8 @@ Object.assign(pc, (function () {
          * r.lerp(a, b, 1);   // r is equal to b
          */
         lerp: function (lhs, rhs, alpha) {
-            var a = lhs.data,
-                b = rhs.data,
-                r = this.data;
-
-            r[0] = a[0] + alpha * (b[0] - a[0]);
-            r[1] = a[1] + alpha * (b[1] - a[1]);
+            this.x = lhs.x + alpha * (rhs.x - lhs.x);
+            this.y = lhs.y + alpha * (rhs.y - lhs.y);
 
             return this;
         },
@@ -232,11 +224,8 @@ Object.assign(pc, (function () {
          * console.log("The result of the multiplication is: " + a.toString());
          */
         mul: function (rhs) {
-            var a = this.data,
-                b = rhs.data;
-
-            a[0] *= b[0];
-            a[1] *= b[1];
+            this.x *= rhs.x;
+            this.y *= rhs.y;
 
             return this;
         },
@@ -259,12 +248,8 @@ Object.assign(pc, (function () {
          * console.log("The result of the multiplication is: " + r.toString());
          */
         mul2: function (lhs, rhs) {
-            var a = lhs.data,
-                b = rhs.data,
-                r = this.data;
-
-            r[0] = a[0] * b[0];
-            r[1] = a[1] * b[1];
+            this.x = lhs.x * rhs.x;
+            this.y = lhs.y * rhs.y;
 
             return this;
         },
@@ -284,13 +269,11 @@ Object.assign(pc, (function () {
          * console.log("The result of the vector normalization is: " + v.toString());
          */
         normalize: function () {
-            var v = this.data;
-
-            var lengthSq = v[0] * v[0] + v[1] * v[1];
+            var lengthSq = this.x * this.x + this.y * this.y;
             if (lengthSq > 0) {
                 var invLength = 1 / Math.sqrt(lengthSq);
-                v[0] *= invLength;
-                v[1] *= invLength;
+                this.x *= invLength;
+                this.y *= invLength;
             }
 
             return this;
@@ -316,10 +299,8 @@ Object.assign(pc, (function () {
          * v.scale(0.5);
          */
         scale: function (scalar) {
-            var v = this.data;
-
-            v[0] *= scalar;
-            v[1] *= scalar;
+            this.x *= scalar;
+            this.y *= scalar;
 
             return this;
         },
@@ -339,10 +320,8 @@ Object.assign(pc, (function () {
          * console.log("The result of the vector set is: " + v.toString());
          */
         set: function (x, y) {
-            var v = this.data;
-
-            v[0] = x;
-            v[1] = y;
+            this.x = x;
+            this.y = y;
 
             return this;
         },
@@ -363,11 +342,8 @@ Object.assign(pc, (function () {
          * console.log("The result of the addition is: " + a.toString());
          */
         sub: function (rhs) {
-            var a = this.data,
-                b = rhs.data;
-
-            a[0] -= b[0];
-            a[1] -= b[1];
+            this.x -= rhs.x;
+            this.y -= rhs.y;
 
             return this;
         },
@@ -390,12 +366,8 @@ Object.assign(pc, (function () {
          * console.log("The result of the addition is: " + r.toString());
          */
         sub2: function (lhs, rhs) {
-            var a = lhs.data,
-                b = rhs.data,
-                r = this.data;
-
-            r[0] = a[0] - b[0];
-            r[1] = a[1] - b[1];
+            this.x = lhs.x - rhs.x;
+            this.y = lhs.y - rhs.y;
 
             return this;
         },
@@ -411,7 +383,7 @@ Object.assign(pc, (function () {
          * console.log(v.toString());
          */
         toString: function () {
-            return '[' + this.data[0] + ', ' + this.data[1] + ']';
+            return '[' + this.x + ', ' + this.y + ']';
         }
     });
 
@@ -429,15 +401,6 @@ Object.assign(pc, (function () {
      * // Set x
      * vec.x = 0;
      */
-    Object.defineProperty(Vec2.prototype, 'x', {
-        get: function () {
-            return this.data[0];
-        },
-        set: function (value) {
-            this.data[0] = value;
-        }
-    });
-
     /**
      * @field
      * @type Number
@@ -452,14 +415,6 @@ Object.assign(pc, (function () {
      * // Set y
      * vec.y = 0;
      */
-    Object.defineProperty(Vec2.prototype, 'y', {
-        get: function () {
-            return this.data[1];
-        },
-        set: function (value) {
-            this.data[1] = value;
-        }
-    });
 
     /**
      * @field

@@ -3,6 +3,7 @@ Object.assign(pc, function () {
      * @component
      * @constructor
      * @name pc.CollisionComponent
+     * @extends pc.Component
      * @classdesc A collision volume. Use this in conjunction with a {@link pc.RigidBodyComponent} to make a collision volume that can be simulated using the physics engine.
      * <p>If the {@link pc.Entity} does not have a {@link pc.RigidBodyComponent} then this collision volume will act as a trigger volume. When an entity with a dynamic
      * or kinematic body enters or leaves an entity with a trigger volume, both entities will receive trigger events.
@@ -53,21 +54,27 @@ Object.assign(pc, function () {
      * @property {String} type The type of the collision volume. Defaults to 'box'. Can be one of the following:
      * <ul>
      * <li><strong>box</strong>: A box-shaped collision volume.</li>
-     * <li><strong>sphere</strong>: A sphere-shaped collision volume.</li>
      * <li><strong>capsule</strong>: A capsule-shaped collision volume.</li>
+     * <li><strong>compound</strong>: A compound shape. Any descendent entities with a collision component
+     * of type box, capsule, cone, cylinder or sphere will be combined into a single, rigid shape.</li>
+     * <li><strong>cone</strong>: A cone-shaped collision volume.</li>
      * <li><strong>cylinder</strong>: A cylinder-shaped collision volume.</li>
      * <li><strong>mesh</strong>: A collision volume that uses a model asset as its shape.</li>
+     * <li><strong>sphere</strong>: A sphere-shaped collision volume.</li>
      * </ul>
      * @property {pc.Vec3} halfExtents The half-extents of the box-shaped collision volume in the x, y and z axes. Defaults to [0.5, 0.5, 0.5]
-     * @property {Number} radius The radius of the sphere, capsule or cylinder-shaped collision volumes. Defaults to 0.5
-     * @property {Number} axis The local space axis with which the capsule or cylinder-shaped collision volume's length is aligned. 0 for X, 1 for Y and 2 for Z. Defaults to 1 (Y-axis).
-     * @property {Number} height The total height of the capsule or cylinder-shaped collision volume from tip to tip. Defaults to 2.
+     * @property {Number} radius The radius of the sphere, capsule, cylinder or cone-shaped collision volumes. Defaults to 0.5
+     * @property {Number} axis The local space axis with which the capsule, cylinder or cone-shaped collision volume's length is aligned. 0 for X, 1 for Y and 2 for Z. Defaults to 1 (Y-axis).
+     * @property {Number} height The total height of the capsule, cylinder or cone-shaped collision volume from tip to tip. Defaults to 2.
      * @property {pc.Asset} asset The asset for the model of the mesh collision volume - can also be an asset id.
      * @property {pc.Model} model The model that is added to the scene graph for the mesh collision volume.
-     * @extends pc.Component
      */
     var CollisionComponent = function CollisionComponent(system, entity) {
         pc.Component.call(this, system, entity);
+
+        this._compoundParent = null;
+
+        this.entity.on('insert', this._onInsert, this);
 
         this.on('set_type', this.onSetType, this);
         this.on('set_halfExtents', this.onSetHalfExtents, this);
@@ -119,7 +126,6 @@ Object.assign(pc, function () {
      */
 
     Object.assign(CollisionComponent.prototype, {
-
         onSetType: function (name, oldValue, newValue) {
             if (oldValue !== newValue) {
                 this.system.changeType(this, oldValue, newValue);
@@ -127,25 +133,29 @@ Object.assign(pc, function () {
         },
 
         onSetHalfExtents: function (name, oldValue, newValue) {
-            if (this.data.initialized && this.data.type === 'box') {
+            var t = this.data.type;
+            if (this.data.initialized && t === 'box') {
                 this.system.recreatePhysicalShapes(this);
             }
         },
 
         onSetRadius: function (name, oldValue, newValue) {
-            if (this.data.initialized && (this.data.type === 'sphere' || this.data.type === 'capsule' || this.data.type === 'cylinder')) {
+            var t = this.data.type;
+            if (this.data.initialized && (t === 'sphere' || t === 'capsule' || t === 'cylinder' || t === 'cone')) {
                 this.system.recreatePhysicalShapes(this);
             }
         },
 
         onSetHeight: function (name, oldValue, newValue) {
-            if (this.data.initialized && (this.data.type === 'capsule' || this.data.type === 'cylinder')) {
+            var t = this.data.type;
+            if (this.data.initialized && (t === 'capsule' || t === 'cylinder' || t === 'cone')) {
                 this.system.recreatePhysicalShapes(this);
             }
         },
 
         onSetAxis: function (name, oldValue, newValue) {
-            if (this.data.initialized && (this.data.type === 'capsule' || this.data.type === 'cylinder')) {
+            var t = this.data.type;
+            if (this.data.initialized && (t === 'capsule' || t === 'cylinder' || t === 'cone')) {
                 this.system.recreatePhysicalShapes(this);
             }
         },
@@ -201,9 +211,48 @@ Object.assign(pc, function () {
             }
         },
 
-        onEnable: function () {
-            pc.Component.prototype.onEnable.call(this);
+        _getCompoundChildShapeIndex: function (shape) {
+            var compound = this.data.shape;
+            var shapes = compound.getNumChildShapes();
 
+            for (var i = 0; i < shapes; i++) {
+                var childShape = compound.getChildShape(i);
+                if (childShape.ptr === shape.ptr) {
+                    return i;
+                }
+            }
+
+            return null;
+        },
+
+        _onInsert: function (parent) {
+            // TODO
+            // if is child of compound shape
+            // and there is no change of compoundParent, then update child transform
+            // once updateChildTransform is exposed in ammo.js
+
+            if (typeof Ammo === 'undefined')
+                return;
+
+            if (this._compoundParent) {
+                this.system.recreatePhysicalShapes(this);
+            } else if (! this.entity.rigidbody) {
+                var ancestor = this.entity.parent;
+                while (ancestor) {
+                    if (ancestor.collision && ancestor.collision.type === 'compound') {
+                        if (ancestor.collision.shape.getNumChildShapes() === 0) {
+                            this.system.recreatePhysicalShapes(ancestor.collision);
+                        } else {
+                            this.system.recreatePhysicalShapes(this);
+                        }
+                        break;
+                    }
+                    ancestor = ancestor.parent;
+                }
+            }
+        },
+
+        onEnable: function () {
             if (this.data.type === 'mesh' && this.data.asset && this.data.initialized) {
                 var asset = this.system.app.assets.get(this.data.asset);
                 // recreate the collision shape if the model asset is not loaded
@@ -214,23 +263,43 @@ Object.assign(pc, function () {
                 }
             }
 
-            if (this.entity.trigger) {
-                this.entity.trigger.enable();
-            } else if (this.entity.rigidbody) {
+            if (this.entity.rigidbody) {
                 if (this.entity.rigidbody.enabled) {
                     this.entity.rigidbody.enableSimulation();
                 }
+            } else if (this._compoundParent && this !== this._compoundParent) {
+                if (this._compoundParent.shape.getNumChildShapes() === 0) {
+                    this.system.recreatePhysicalShapes(this._compoundParent);
+                } else {
+                    var transform = this.system._getNodeTransform(this.entity, this._compoundParent.entity);
+                    this._compoundParent.shape.addChildShape(transform, this.data.shape);
+                    Ammo.destroy(transform);
+
+                    if (this._compoundParent.entity.rigidbody)
+                        this._compoundParent.entity.rigidbody.activate();
+                }
+            } else if (this.entity.trigger) {
+                this.entity.trigger.enable();
             }
         },
 
         onDisable: function () {
-            pc.Component.prototype.onDisable.call(this);
-
-            if (this.entity.trigger) {
-                this.entity.trigger.disable();
-            } else if (this.entity.rigidbody) {
+            if (this.entity.rigidbody) {
                 this.entity.rigidbody.disableSimulation();
+            } else if (this._compoundParent && this !== this._compoundParent) {
+                if (! this._compoundParent.entity._destroying) {
+                    this.system._removeCompoundChild(this._compoundParent, this.data.shape);
+
+                    if (this._compoundParent.entity.rigidbody)
+                        this._compoundParent.entity.rigidbody.activate();
+                }
+            } else if (this.entity.trigger) {
+                this.entity.trigger.disable();
             }
+        },
+
+        onBeforeRemove: function () {
+            this.entity.off('insert', this._onInsert, this);
         }
     });
 

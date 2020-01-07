@@ -51,17 +51,17 @@ Object.assign(pc, function () {
      * @property {Boolean} frustumCulling Controls the culling of mesh instances against the camera frustum, i.e. if objects outside of camera should be omitted from rendering.
      * If true, culling is enabled.
      * If false, all mesh instances in the scene are rendered by the camera, regardless of visibility. Defaults to false.
-     * @property {Function} calculateTransform Custom function you can provide to calculate the camera transformation matrix manually. Can be used for complex effects like reflections. Function is called using component's scope.
+     * @property {pc.callbacks.CalculateMatrix} calculateTransform Custom function you can provide to calculate the camera transformation matrix manually. Can be used for complex effects like reflections. Function is called using component's scope.
      * Arguments:
      *     <li>{pc.Mat4} transformMatrix: output of the function</li>
      *     <li>{Number} view: Type of view. Can be pc.VIEW_CENTER, pc.VIEW_LEFT or pc.VIEW_RIGHT. Left and right are only used in stereo rendering.</li>
-     * @property {Function} calculateProjection Custom function you can provide to calculate the camera projection matrix manually. Can be used for complex effects like doing oblique projection. Function is called using component's scope.
+     * @property {pc.callbacks.CalculateMatrix} calculateProjection Custom function you can provide to calculate the camera projection matrix manually. Can be used for complex effects like doing oblique projection. Function is called using component's scope.
      * Arguments:
      *     <li>{pc.Mat4} transformMatrix: output of the function</li>
      *     <li>{Number} view: Type of view. Can be pc.VIEW_CENTER, pc.VIEW_LEFT or pc.VIEW_RIGHT. Left and right are only used in stereo rendering.</li>
      * @property {Boolean} cullFaces If true the camera will take material.cull into account. Otherwise both front and back faces will be rendered.
      * @property {Boolean} flipFaces If true the camera will invert front and back faces. Can be useful for reflection rendering.
-     * @property {Array} layers An array of layer IDs ({@link pc.Layer#id}) to which this camera should belong.
+     * @property {Number[]} layers An array of layer IDs ({@link pc.Layer#id}) to which this camera should belong.
      * Don't push/pop/splice or modify this array, if you want to change it - set a new one instead.
      */
     var CameraComponent = function CameraComponent(system, entity) {
@@ -115,8 +115,7 @@ Object.assign(pc, function () {
      */
     Object.defineProperty(CameraComponent.prototype, "viewMatrix", {
         get: function () {
-            var wtm = this.data.camera._node.getWorldTransform();
-            return wtm.clone().invert();
+            return this.data.camera.getViewMatrix();
         }
     });
 
@@ -200,6 +199,11 @@ Object.assign(pc, function () {
             return this.data.camera.screenToWorld(screenx, screeny, cameraz, device.clientRect.width, device.clientRect.height, worldCoord);
         },
 
+        onPrerender: function () {
+            this.data.camera._viewMatDirty = true;
+            this.data.camera._viewProjMatDirty = true;
+        },
+
         /**
          * @function
          * @name pc.CameraComponent#worldToScreen
@@ -230,10 +234,11 @@ Object.assign(pc, function () {
         },
 
         onSetClearColor: function (name, oldValue, newValue) {
-            this.data.camera.clearColor[0] = newValue.data[0];
-            this.data.camera.clearColor[1] = newValue.data[1];
-            this.data.camera.clearColor[2] = newValue.data[2];
-            this.data.camera.clearColor[3] = newValue.data[3];
+            var clearColor = this.data.camera.clearColor;
+            clearColor[0] = newValue.r;
+            clearColor[1] = newValue.g;
+            clearColor[2] = newValue.b;
+            clearColor[3] = newValue.a;
         },
 
         onSetFov: function (name, oldValue, newValue) {
@@ -365,15 +370,14 @@ Object.assign(pc, function () {
         },
 
         onSetRect: function (name, oldValue, newValue) {
-            this.data.camera.setRect(newValue.data[0], newValue.data[1], newValue.data[2], newValue.data[3]);
+            this.data.camera.setRect(newValue.x, newValue.y, newValue.z, newValue.w);
         },
 
         onSetScissorRect: function (name, oldValue, newValue) {
-            this.data.camera.setScissorRect(newValue.data[0], newValue.data[1], newValue.data[2], newValue.data[3]);
+            this.data.camera.setScissorRect(newValue.x, newValue.y, newValue.z, newValue.w);
         },
 
         onEnable: function () {
-            pc.Component.prototype.onEnable.call(this);
             this.system.addCamera(this);
 
             this.system.app.scene.on("set:layers", this.onLayersChanged, this);
@@ -390,7 +394,6 @@ Object.assign(pc, function () {
         },
 
         onDisable: function () {
-            pc.Component.prototype.onDisable.call(this);
             this.postEffects.disable();
 
             this.removeCameraFromLayers();
@@ -402,6 +405,11 @@ Object.assign(pc, function () {
             }
 
             this.system.removeCamera(this);
+        },
+
+        onRemove: function () {
+            this.onDisable();
+            this.off();
         },
 
         /**
@@ -441,13 +449,29 @@ Object.assign(pc, function () {
             this.data.isRendering = false;
         },
 
-
         /**
          * @function
          * @name pc.CameraComponent#enterVr
          * @description Attempt to start presenting this camera to a {@link pc.VrDisplay}.
-         * @param {pc.VrDisplay} [display] The VrDisplay to present. If not supplied this uses {@link pc.VrManager#display} as the default
-         * @param {Function} callback Function called once to indicate success of failure. The callback takes one argument (err).
+         * @param {pc.callbacks.VrCamera} callback Function called once to indicate success of failure. The callback takes one argument (err).
+         * On success it returns null on failure it returns the error message.
+         * @example
+         * // On an entity with a camera component
+         * this.entity.camera.enterVr(function (err) {
+         *     if (err) {
+         *         console.error(err);
+         *         return;
+         *     } else {
+         *         // in VR!
+         *     }
+         * });
+         *//**
+         * @function
+         * @name pc.CameraComponent#enterVr
+         * @variation 2
+         * @description Attempt to start presenting this camera to a {@link pc.VrDisplay}.
+         * @param {pc.VrDisplay} display The VrDisplay to present. If not supplied this uses {@link pc.VrManager#display} as the default
+         * @param {pc.callbacks.VrCamera} callback Function called once to indicate success of failure. The callback takes one argument (err).
          * On success it returns null on failure it returns the error message.
          * @example
          * // On an entity with a camera component
@@ -507,7 +531,7 @@ Object.assign(pc, function () {
          * @function
          * @name pc.CameraComponent#exitVr
          * @description Attempt to stop presenting this camera.
-         * @param {Function} callback Function called once to indicate success of failure. The callback takes one argument (err).
+         * @param {pc.callbacks.VrCamera} callback Function called once to indicate success of failure. The callback takes one argument (err).
          * On success it returns null on failure it returns the error message.
          * @example
          * this.entity.camera.exitVr(function (err) {

@@ -16,6 +16,19 @@ Object.assign(pc, function () {
      * set to pc.RENDERSTYLE_WIREFRAME.
      * @property {Object[]} primitive Array of primitive objects defining how vertex (and index) data in the
      * mesh should be interpreted by the graphics device. For details on the primitive object, see
+     * @property {Number} primitive[].type The type of primitive to render. Can be:
+     * <ul>
+     *     <li>{@link pc.PRIMITIVE_POINTS}</li>
+     *     <li>{@link pc.PRIMITIVE_LINES}</li>
+     *     <li>{@link pc.PRIMITIVE_LINELOOP}</li>
+     *     <li>{@link pc.PRIMITIVE_LINESTRIP}</li>
+     *     <li>{@link pc.PRIMITIVE_TRIANGLES}</li>
+     *     <li>{@link pc.PRIMITIVE_TRISTRIP}</li>
+     *     <li>{@link pc.PRIMITIVE_TRIFAN}</li>
+     * </ul>
+     * @property {Number} primitive[].base The offset of the first index or vertex to dispatch in the draw call.
+     * @property {Number} primitive[].count The number of indices or vertices to dispatch in the draw call.
+     * @property {Boolean} [primitive[].indexed] True to interpret the primitive as indexed, thereby using the currently set index buffer and false otherwise.
      * {@link pc.GraphicsDevice#draw}. The primitive is ordered based on render style like the indexBuffer property.
      * @property {pc.BoundingBox} aabb The axis-aligned bounding box for the object space vertices of this mesh.
      */
@@ -74,6 +87,8 @@ Object.assign(pc, function () {
      * Defaults to false.
      * @property {Boolean} visible Enable rendering for this mesh instance. Use visible property to enable/disable rendering without overhead of removing from scene.
      * But note that the mesh instance is still in the hierarchy and still in the draw call list.
+     * @property {pc.GraphNode} node The graph node defining the transform for this instance.
+     * @property {pc.Mesh} mesh The graphics mesh being instanced.
      * @property {pc.Material} material The material used by this mesh instance.
      * @property {Number} renderStyle The render style of the mesh instance. Can be:
      * <ul>
@@ -137,10 +152,15 @@ Object.assign(pc, function () {
         this.drawOrder = 0;
         this.visibleThisFrame = 0;
 
+        // custom function used to customize culling (e.g. for 2D UI elements)
+        this.isVisibleFunc = null;
+
         this.parameters = {};
 
         this.stencilFront = null;
         this.stencilBack = null;
+        // Negative scale batching support
+        this.flipFaces = false;
     };
 
     Object.defineProperty(MeshInstance.prototype, 'mesh', {

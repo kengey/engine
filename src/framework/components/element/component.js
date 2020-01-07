@@ -4,19 +4,22 @@ Object.assign(pc, function () {
     // #endif
 
     /**
-     * @enum pc.ELEMENTTYPE
+     * @constant
+     * @type {String}
      * @name pc.ELEMENTTYPE_GROUP
      * @description A {@link pc.ElementComponent} that contains child {@link pc.ElementComponent}s.
      */
     pc.ELEMENTTYPE_GROUP = 'group';
     /**
-     * @enum pc.ELEMENTTYPE
+     * @constant
+     * @type {String}
      * @name pc.ELEMENTTYPE_IMAGE
      * @description A {@link pc.ElementComponent} that displays an image.
      */
     pc.ELEMENTTYPE_IMAGE = 'image';
     /**
-     * @enum pc.ELEMENTTYPE
+     * @constant
+     * @type {String}
      * @name pc.ELEMENTTYPE_TEXT
      * @description A {@link pc.ElementComponent} that displays text.
      */
@@ -66,6 +69,10 @@ Object.assign(pc, function () {
      * @property {Boolean} useInput If true then the component will receive Mouse or Touch input events.
      * @property {pc.Color} color The color of the image for {@link pc.ELEMENTTYPE_IMAGE} types or the color of the text for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {Number} opacity The opacity of the image for {@link pc.ELEMENTTYPE_IMAGE} types or the text for {@link pc.ELEMENTTYPE_TEXT} types.
+     * @property {pc.Color} outlineColor The text outline effect color and opacity. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
+     * @property {Number} outlineThickness The width of the text outline effect. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
+     * @property {pc.Color} shadowColor The text shadow effect color and opacity. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
+     * @property {pc.Vec2} shadowOffset The text shadow effect shift amount from original text. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {Number} textWidth The width of the text rendered by the component. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {Number} textHeight The height of the text rendered by the component. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {Number} autoWidth Automatically set the width of the component to be the same as the textWidth. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
@@ -73,11 +80,17 @@ Object.assign(pc, function () {
      * @property {Number} fontAsset The id of the font asset used for rendering the text. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {pc.Font} font The font used for rendering the text. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {Number} fontSize The size of the font. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
+     * @property {Boolean} autoFitWidth When true the font size and line height will scale so that the text fits inside the width of the Element. The font size will be scaled between minFontSize and maxFontSize. The value of autoFitWidth will be ignored if autoWidth is true.
+     * @property {Boolean} autoFitHeight When true the font size and line height will scale so that the text fits inside the height of the Element. The font size will be scaled between minFontSize and maxFontSize. The value of autoFitHeight will be ignored if autoHeight is true.
+     * @property {Number} minFontSize The minimum size that the font can scale to when autoFitWidth or autoFitHeight are true.
+     * @property {Number} maxFontSize The maximum size that the font can scale to when autoFitWidth or autoFitHeight are true.
      * @property {Number} spacing The spacing between the letters of the text. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {Number} lineHeight The height of each line of text. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {Boolean} wrapLines Whether to automatically wrap lines based on the element width. Only works for {@link pc.ELEMENTTYPE_TEXT} types, and when autoWidth is set to false.
+     * @property {Number} maxLines The maximum number of lines that the Element can wrap to. Any leftover text will be appended to the last line. Set this to null to allow unlimited lines.
      * @property {pc.Vec2} alignment The horizontal and vertical alignment of the text. Values range from 0 to 1 where [0,0] is the bottom left and [1,1] is the top right.  Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {String} text The text to render. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
+     * @property {String} key The localization key to use to get the localized text from {@link pc.Application#i18n}. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      * @property {Number} textureAsset The id of the texture asset to render. Only works for {@link pc.ELEMENTTYPE_IMAGE} types.
      * @property {pc.Texture} texture The texture to render. Only works for {@link pc.ELEMENTTYPE_IMAGE} types.
      * @property {Number} spriteAsset The id of the sprite asset to render. Only works for {@link pc.ELEMENTTYPE_IMAGE} types which can render either a texture or a sprite.
@@ -87,12 +100,21 @@ Object.assign(pc, function () {
      * @property {Number} materialAsset The id of the material asset to use when rendering an image. Only works for {@link pc.ELEMENTTYPE_IMAGE} types.
      * @property {pc.Material} material The material to use when rendering an image. Only works for {@link pc.ELEMENTTYPE_IMAGE} types.
      * @property {pc.Vec4} rect Specifies which region of the texture to use in order to render an image. Values range from 0 to 1 and indicate u, v, width, height. Only works for {@link pc.ELEMENTTYPE_IMAGE} types.
+     * @property {Boolean} rtlReorder Reorder the text for RTL languages using a function registered by <code>app.systems.element.registerUnicodeConverter</code>.
+     * @property {Boolean} unicodeConverter Convert unicode characters using a function registered by <code>app.systems.element.registerUnicodeConverter</code>.
      * @property {Number} batchGroupId Assign element to a specific batch group (see {@link pc.BatchGroup}). Default value is -1 (no group).
-     * @property {Array} layers An array of layer IDs ({@link pc.Layer#id}) to which this element should belong.
+     * @property {Number[]} layers An array of layer IDs ({@link pc.Layer#id}) to which this element should belong.
      * Don't push/pop/splice or modify this array, if you want to change it - set a new one instead.
+     * @property {Boolean} enableMarkup Flag for enabling markup processing. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
+     * @property {Number} rangeStart Index of the first character to render. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
+     * @property {Number} rangeEnd Index of the last character to render. Only works for {@link pc.ELEMENTTYPE_TEXT} types.
      */
     var ElementComponent = function ElementComponent(system, entity) {
         pc.Component.call(this, system, entity);
+
+        // set to true by the ElementComponentSystem while
+        // the component is being initialized
+        this._beingInitialized = false;
 
         this._anchor = new pc.Vec4();
         this._localAnchor = new pc.Vec4();
@@ -163,6 +185,7 @@ Object.assign(pc, function () {
 
         this._offsetReadAt = 0;
         this._maskOffset = 0.5;
+        this._maskedBy = null; // the entity that is masking this element
     };
     ElementComponent.prototype = Object.create(pc.Component.prototype);
     ElementComponent.prototype.constructor = ElementComponent;
@@ -199,7 +222,7 @@ Object.assign(pc, function () {
                 invParentWtm.transformPoint(position, this.localPosition);
 
                 if (!this._dirtyLocal)
-                    this._dirtify(true);
+                    this._dirtifyLocal();
             };
         }(),
 
@@ -212,15 +235,15 @@ Object.assign(pc, function () {
 
             // update margin
             var element = this.element;
-            var p = this.localPosition.data;
-            var pvt = element._pivot.data;
-            element._margin.data[0] = p[0] - element._calculatedWidth * pvt[0];
-            element._margin.data[2] = (element._localAnchor.data[2] - element._localAnchor.data[0]) - element._calculatedWidth - element._margin.data[0];
-            element._margin.data[1] = p[1] - element._calculatedHeight * pvt[1];
-            element._margin.data[3] = (element._localAnchor.data[3] - element._localAnchor.data[1]) - element._calculatedHeight - element._margin.data[1];
+            var p = this.localPosition;
+            var pvt = element._pivot;
+            element._margin.x = p.x - element._calculatedWidth * pvt.x;
+            element._margin.z = (element._localAnchor.z - element._localAnchor.x) - element._calculatedWidth - element._margin.x;
+            element._margin.y = p.y - element._calculatedHeight * pvt.y;
+            element._margin.w = (element._localAnchor.w - element._localAnchor.y) - element._calculatedHeight - element._margin.y;
 
             if (!this._dirtyLocal)
-                this._dirtify(true);
+                this._dirtifyLocal();
         },
 
         // this method overwrites GraphNode#sync and so operates in scope of the Entity.
@@ -259,7 +282,7 @@ Object.assign(pc, function () {
                 // WARNING: Order is important as calculateSize resets dirtyLocal
                 // so this needs to run before resetting dirtyLocal to false below
                 if (element._sizeDirty) {
-                    element._calculateSize();
+                    element._calculateSize(false, false);
                 }
             }
 
@@ -267,12 +290,12 @@ Object.assign(pc, function () {
                 this.localTransform.setTRS(this.localPosition, this.localRotation, this.localScale);
 
                 // update margin
-                var p = this.localPosition.data;
-                var pvt = element._pivot.data;
-                element._margin.data[0] = p[0] - element._calculatedWidth * pvt[0];
-                element._margin.data[2] = (element._localAnchor.data[2] - element._localAnchor.data[0]) - element._calculatedWidth - element._margin.data[0];
-                element._margin.data[1] = p[1] - element._calculatedHeight * pvt[1];
-                element._margin.data[3] = (element._localAnchor.data[3] - element._localAnchor.data[1]) - element._calculatedHeight - element._margin.data[1];
+                var p = this.localPosition;
+                var pvt = element._pivot;
+                element._margin.x = p.x - element._calculatedWidth * pvt.x;
+                element._margin.z = (element._localAnchor.z - element._localAnchor.x) - element._calculatedWidth - element._margin.x;
+                element._margin.y = p.y - element._calculatedHeight * pvt.y;
+                element._margin.w = (element._localAnchor.w - element._localAnchor.y) - element._calculatedHeight - element._margin.y;
 
                 this._dirtyLocal = false;
             }
@@ -350,7 +373,7 @@ Object.assign(pc, function () {
 
             var result = this._parseUpToScreen();
 
-            this.entity._dirtify();
+            this.entity._dirtifyWorld();
 
             this._updateScreen(result.screen);
 
@@ -363,7 +386,7 @@ Object.assign(pc, function () {
                 // search up the hierarchy until we find an entity which has:
                 // - no parent
                 // - screen component on parent
-                var next = current.getParent();
+                var next = current.parent;
                 if ((next === null || next.screen) && current.element) {
                     if (!this.system._prerender || !this.system._prerender.length) {
                         this.system._prerender = [];
@@ -407,23 +430,31 @@ Object.assign(pc, function () {
             this.system._prerender.length = 0;
         },
 
+        _bindScreen: function (screen) {
+            screen.on('set:resolution', this._onScreenResize, this);
+            screen.on('set:referenceresolution', this._onScreenResize, this);
+            screen.on('set:scaleblend', this._onScreenResize, this);
+            screen.on('set:screenspace', this._onScreenSpaceChange, this);
+            screen.on('remove', this._onScreenRemove, this);
+        },
+
+        _unbindScreen: function (screen) {
+            screen.off('set:resolution', this._onScreenResize, this);
+            screen.off('set:referenceresolution', this._onScreenResize, this);
+            screen.off('set:scaleblend', this._onScreenResize, this);
+            screen.off('set:screenspace', this._onScreenSpaceChange, this);
+            screen.off('remove', this._onScreenRemove, this);
+        },
+
         _updateScreen: function (screen) {
             if (this.screen && this.screen !== screen) {
-                this.screen.screen.off('set:resolution', this._onScreenResize, this);
-                this.screen.screen.off('set:referenceresolution', this._onScreenResize, this);
-                this.screen.screen.off('set:scaleblend', this._onScreenResize, this);
-                this.screen.screen.off('set:screenspace', this._onScreenSpaceChange, this);
-                this.screen.screen.off('remove', this._onScreenRemove, this);
+                this._unbindScreen(this.screen.screen);
             }
 
             var previousScreen = this.screen;
             this.screen = screen;
             if (this.screen) {
-                this.screen.screen.on('set:resolution', this._onScreenResize, this);
-                this.screen.screen.on('set:referenceresolution', this._onScreenResize, this);
-                this.screen.screen.on('set:scaleblend', this._onScreenResize, this);
-                this.screen.screen.on('set:screenspace', this._onScreenSpaceChange, this);
-                this.screen.screen.on('remove', this._onScreenRemove, this);
+                this._bindScreen(this.screen.screen);
             }
 
             this._calculateSize(this._hasSplitAnchorsX, this._hasSplitAnchorsY);
@@ -433,7 +464,7 @@ Object.assign(pc, function () {
             this._anchorDirty = true;
 
             // update all child screens
-            var children = this.entity.getChildren();
+            var children = this.entity.children;
             for (var i = 0, l = children.length; i < l; i++) {
                 if (children[i].element) children[i].element._updateScreen(screen);
             }
@@ -447,13 +478,13 @@ Object.assign(pc, function () {
             this._updateMask(result.mask, depth);
         },
 
-        // set the stencil buffer to check the mask value
-        // so as to only render inside the mask
-        // Note: if this entity is itself a mask the stencil params
-        // will be updated in updateMask to include masking
+        // set the maskedby property to the entity that is masking this element
+        // - set the stencil buffer to check the mask value
+        //   so as to only render inside the mask
+        //   Note: if this entity is itself a mask the stencil params
+        //   will be updated in updateMask to include masking
         _setMaskedBy: function (mask) {
-            var elem = this._image || this._text;
-            if (!elem) return;
+            var renderableElement = this._image || this._text;
 
             if (mask) {
                 var ref = mask.element._image._maskRef;
@@ -466,21 +497,22 @@ Object.assign(pc, function () {
                     func: pc.FUNC_EQUAL
                 });
 
-                if (elem._setStencil) {
-                    elem._setStencil(sp);
+                // if this is image or text, set the stencil parameters
+                if (renderableElement && renderableElement._setStencil) {
+                    renderableElement._setStencil(sp);
                 }
 
-                elem._maskedBy = mask;
+                this._maskedBy = mask;
             } else {
                 // #ifdef DEBUG
                 if (_debugLogging) console.log("no masking on: " + this.entity.name);
                 // #endif
 
-                // remove mask
-                if (elem._setStencil) {
-                    elem._setStencil(null);
+                // remove stencil params if this is image or text
+                if (renderableElement && renderableElement._setStencil) {
+                    renderableElement._setStencil(null);
                 }
-                elem._maskedBy = null;
+                this._maskedBy = null;
             }
         },
 
@@ -517,7 +549,7 @@ Object.assign(pc, function () {
                 }
 
                 // recurse through all children
-                children = this.entity.getChildren();
+                children = this.entity.children;
                 for (i = 0, l = children.length; i < l; i++) {
                     if (children[i].element) {
                         children[i].element._updateMask(currentMask, depth);
@@ -554,7 +586,7 @@ Object.assign(pc, function () {
                 }
 
                 // recurse through all children
-                children = this.entity.getChildren();
+                children = this.entity.children;
                 for (i = 0, l = children.length; i < l; i++) {
                     if (children[i].element) {
                         children[i].element._updateMask(currentMask, depth);
@@ -605,7 +637,10 @@ Object.assign(pc, function () {
         },
 
         _onScreenRemove: function () {
-            this._updateScreen(null);
+            // if there is a screen and it is not being destroyed
+            if (this.screen && !this.screen._destroying) {
+                this._updateScreen(null);
+            }
         },
 
         // store pixel positions of anchor relative to current parent resolution
@@ -672,7 +707,6 @@ Object.assign(pc, function () {
         },
 
         onEnable: function () {
-            pc.Component.prototype.onEnable.call(this);
             if (this._image) this._image.onEnable();
             if (this._text) this._text.onEnable();
             if (this._group) this._group.onEnable();
@@ -687,12 +721,14 @@ Object.assign(pc, function () {
                 this.system.app.scene.layers.on("remove", this.onLayerRemoved, this);
             }
 
+            if (this._batchGroupId >= 0) {
+                this.system.app.batcher.insert(pc.BatchGroup.ELEMENT, this.batchGroupId, this.entity);
+            }
+
             this.fire("enableelement");
         },
 
         onDisable: function () {
-            pc.Component.prototype.onDisable.call(this);
-
             this.system.app.scene.off("set:layers", this.onLayersChanged, this);
             if (this.system.app.scene.layers) {
                 this.system.app.scene.layers.off("add", this.onLayerAdded, this);
@@ -708,7 +744,7 @@ Object.assign(pc, function () {
             }
 
             if (this._batchGroupId >= 0) {
-                this.system.app.batcher.markGroupDirty(this.batchGroupId);
+                this.system.app.batcher.remove(pc.BatchGroup.ELEMENT, this.batchGroupId, this.entity);
             }
 
             this.fire("disableelement");
@@ -716,7 +752,6 @@ Object.assign(pc, function () {
 
         onRemove: function () {
             this.entity.off('insert', this._onInsert, this);
-
             this._unpatch();
             if (this._image) this._image.destroy();
             if (this._text) this._text.destroy();
@@ -726,9 +761,12 @@ Object.assign(pc, function () {
             }
 
             // if there is a screen, update draw-order
-            if (this.screen) {
+            if (this.screen && this.screen.screen) {
+                this._unbindScreen(this.screen.screen);
                 this.screen.screen.syncDrawOrder();
             }
+
+            this.off();
         },
 
         // recalculates
@@ -757,8 +795,8 @@ Object.assign(pc, function () {
             }
 
             var p = this.entity.getLocalPosition();
-            p.x = this._margin.data[0] + this._calculatedWidth * this._pivot.data[0];
-            p.y = this._margin.data[1] + this._calculatedHeight * this._pivot.data[1];
+            p.x = this._margin.x + this._calculatedWidth * this._pivot.x;
+            p.y = this._margin.y + this._calculatedHeight * this._pivot.y;
 
             this.entity.setLocalPosition(p);
 
@@ -782,45 +820,41 @@ Object.assign(pc, function () {
         },
 
         _setCalculatedWidth: function (value, updateMargins) {
-            var didChange = Math.abs(value - this._calculatedWidth) > 1e-4;
+            if (Math.abs(value - this._calculatedWidth) <= 1e-4)
+                return;
 
             this._calculatedWidth = value;
+            this.entity._dirtifyLocal();
 
             if (updateMargins) {
-                var p = this.entity.getLocalPosition().data;
-                var pvt = this._pivot.data;
-                this._margin.data[0] = p[0] - this._calculatedWidth * pvt[0];
-                this._margin.data[2] = (this._localAnchor.data[2] - this._localAnchor.data[0]) - this._calculatedWidth - this._margin.data[0];
+                var p = this.entity.getLocalPosition();
+                var pvt = this._pivot;
+                this._margin.x = p.x - this._calculatedWidth * pvt.x;
+                this._margin.z = (this._localAnchor.z - this._localAnchor.x) - this._calculatedWidth - this._margin.x;
             }
 
             this._flagChildrenAsDirty();
-
             this.fire('set:calculatedWidth', this._calculatedWidth);
-
-            if (didChange) {
-                this.fire('resize', this._calculatedWidth, this._calculatedHeight);
-            }
+            this.fire('resize', this._calculatedWidth, this._calculatedHeight);
         },
 
         _setCalculatedHeight: function (value, updateMargins) {
-            var didChange = Math.abs(value - this._calculatedHeight) > 1e-4;
+            if (Math.abs(value - this._calculatedHeight) <= 1e-4)
+                return;
 
             this._calculatedHeight = value;
+            this.entity._dirtifyLocal();
 
             if (updateMargins) {
-                var p = this.entity.getLocalPosition().data;
-                var pvt = this._pivot.data;
-                this._margin.data[1] = p[1] - this._calculatedHeight * pvt[1];
-                this._margin.data[3] = (this._localAnchor.data[3] - this._localAnchor.data[1]) - this._calculatedHeight - this._margin.data[1];
+                var p = this.entity.getLocalPosition();
+                var pvt = this._pivot;
+                this._margin.y = p.y - this._calculatedHeight * pvt.y;
+                this._margin.w = (this._localAnchor.w - this._localAnchor.y) - this._calculatedHeight - this._margin.y;
             }
 
             this._flagChildrenAsDirty();
-
             this.fire('set:calculatedHeight', this._calculatedHeight);
-
-            if (didChange) {
-                this.fire('resize', this._calculatedWidth, this._calculatedHeight);
-            }
+            this.fire('resize', this._calculatedWidth, this._calculatedHeight);
         },
 
         _flagChildrenAsDirty: function () {
@@ -868,6 +902,61 @@ Object.assign(pc, function () {
             var mo = this._maskOffset;
             this._maskOffset -= 0.001;
             return mo;
+        },
+
+        isVisibleForCamera: function (camera) {
+            var clipL, clipR, clipT, clipB;
+
+            if (this.maskedBy) {
+                var corners = this.maskedBy.element.screenCorners;
+
+                clipL = Math.min(Math.min(corners[0].x, corners[1].x), Math.min(corners[2].x, corners[3].x));
+                clipR = Math.max(Math.max(corners[0].x, corners[1].x), Math.max(corners[2].x, corners[3].x));
+                clipB = Math.min(Math.min(corners[0].y, corners[1].y), Math.min(corners[2].y, corners[3].y));
+                clipT = Math.max(Math.max(corners[0].y, corners[1].y), Math.max(corners[2].y, corners[3].y));
+            } else {
+                var sw = this.system.app.graphicsDevice.width;
+                var sh = this.system.app.graphicsDevice.height;
+
+                var cameraWidth = camera._rect.width * sw;
+                var cameraHeight = camera._rect.height * sh;
+                clipL = camera._rect.x * sw;
+                clipR = clipL + cameraWidth;
+                clipT = (1 - camera._rect.y) * sh;
+                clipB = clipT - cameraHeight;
+            }
+
+            var hitCorners = this.screenCorners;
+
+            var left = Math.min(Math.min(hitCorners[0].x, hitCorners[1].x), Math.min(hitCorners[2].x, hitCorners[3].x));
+            var right = Math.max(Math.max(hitCorners[0].x, hitCorners[1].x), Math.max(hitCorners[2].x, hitCorners[3].x));
+            var bottom = Math.min(Math.min(hitCorners[0].y, hitCorners[1].y), Math.min(hitCorners[2].y, hitCorners[3].y));
+            var top = Math.max(Math.max(hitCorners[0].y, hitCorners[1].y), Math.max(hitCorners[2].y, hitCorners[3].y));
+
+            if (right < clipL ||
+                left > clipR ||
+                bottom > clipT ||
+                top < clipB) {
+                return false;
+            }
+
+            return true;
+        },
+
+        _isScreenSpace: function () {
+            if (this.screen && this.screen.screen) {
+                return this.screen.screen.screenSpace;
+            }
+
+            return false;
+        },
+
+        _isScreenCulled: function () {
+            if (this.screen && this.screen.screen) {
+                return this.screen.screen.cull;
+            }
+
+            return false;
         }
     });
 
@@ -920,11 +1009,12 @@ Object.assign(pc, function () {
             this._layers = value;
 
             if (!this.enabled || !this.entity.enabled || !this._addedModels.length) return;
+
             for (i = 0; i < this._layers.length; i++) {
                 layer = this.system.app.scene.layers.getLayerById(this._layers[i]);
                 if (layer) {
                     for (j = 0; j < this._addedModels.length; j++) {
-                        layer.removeMeshInstances(this._addedModels[j].meshInstances);
+                        layer.addMeshInstances(this._addedModels[j].meshInstances);
                     }
                 }
             }
@@ -957,25 +1047,25 @@ Object.assign(pc, function () {
 
     Object.defineProperty(ElementComponent.prototype, "_absLeft", {
         get: function () {
-            return this._localAnchor.data[0] + this._margin.data[0];
+            return this._localAnchor.x + this._margin.x;
         }
     });
 
     Object.defineProperty(ElementComponent.prototype, "_absRight", {
         get: function () {
-            return this._localAnchor.data[2] - this._margin.data[2];
+            return this._localAnchor.z - this._margin.z;
         }
     });
 
     Object.defineProperty(ElementComponent.prototype, "_absTop", {
         get: function () {
-            return this._localAnchor.data[3] - this._margin.data[3];
+            return this._localAnchor.w - this._margin.w;
         }
     });
 
     Object.defineProperty(ElementComponent.prototype, "_absBottom", {
         get: function () {
-            return this._localAnchor.data[1] + this._margin.data[1];
+            return this._localAnchor.y + this._margin.y;
         }
     });
 
@@ -993,71 +1083,71 @@ Object.assign(pc, function () {
 
     Object.defineProperty(ElementComponent.prototype, "left", {
         get: function () {
-            return this._margin.data[0];
+            return this._margin.x;
         },
 
         set: function (value) {
-            this._margin.data[0] = value;
+            this._margin.x = value;
             var p = this.entity.getLocalPosition();
             var wr = this._absRight;
-            var wl = this._localAnchor.data[0] + value;
+            var wl = this._localAnchor.x + value;
             this._setWidth(wr - wl);
 
-            p.x = value + this._calculatedWidth * this._pivot.data[0];
+            p.x = value + this._calculatedWidth * this._pivot.x;
             this.entity.setLocalPosition(p);
         }
     });
 
     Object.defineProperty(ElementComponent.prototype, "right", {
         get: function () {
-            return this._margin.data[2];
+            return this._margin.z;
         },
 
         set: function (value) {
-            this._margin.data[2] = value;
+            this._margin.z = value;
 
             // update width
             var p = this.entity.getLocalPosition();
             var wl = this._absLeft;
-            var wr = this._localAnchor.data[2] - value;
+            var wr = this._localAnchor.z - value;
             this._setWidth(wr - wl);
 
             // update position
-            p.x = (this._localAnchor.data[2] - this._localAnchor.data[0]) - value - (this._calculatedWidth * (1 - this._pivot.data[0]));
+            p.x = (this._localAnchor.z - this._localAnchor.x) - value - (this._calculatedWidth * (1 - this._pivot.x));
             this.entity.setLocalPosition(p);
         }
     });
 
     Object.defineProperty(ElementComponent.prototype, "top", {
         get: function () {
-            return this._margin.data[3];
+            return this._margin.w;
         },
 
         set: function (value) {
-            this._margin.data[3] = value;
+            this._margin.w = value;
             var p = this.entity.getLocalPosition();
             var wb = this._absBottom;
-            var wt = this._localAnchor.data[3] - value;
+            var wt = this._localAnchor.w - value;
             this._setHeight(wt - wb);
 
-            p.y = (this._localAnchor.data[3] - this._localAnchor.data[1]) - value - this._calculatedHeight * (1 - this._pivot.data[1]);
+            p.y = (this._localAnchor.w - this._localAnchor.y) - value - this._calculatedHeight * (1 - this._pivot.y);
             this.entity.setLocalPosition(p);
         }
     });
 
     Object.defineProperty(ElementComponent.prototype, "bottom", {
         get: function () {
-            return this._margin.data[1];
+            return this._margin.y;
         },
 
         set: function (value) {
-            this._margin.data[1] = value;
+            this._margin.y = value;
             var p = this.entity.getLocalPosition();
             var wt = this._absTop;
-            var wb = this._localAnchor.data[1] + value;
+            var wb = this._localAnchor.y + value;
             this._setHeight(wt - wb);
 
-            p.y = value + this._calculatedHeight * this._pivot.data[1];
+            p.y = value + this._calculatedHeight * this._pivot.y;
             this.entity.setLocalPosition(p);
         }
     });
@@ -1129,21 +1219,25 @@ Object.assign(pc, function () {
                 this._pivot.set(value[0], value[1]);
             }
 
-            var mx = this._margin.data[0] + this._margin.data[2];
+            var mx = this._margin.x + this._margin.z;
             var dx = this._pivot.x - prevX;
-            this._margin.data[0] += mx * dx;
-            this._margin.data[2] -= mx * dx;
+            this._margin.x += mx * dx;
+            this._margin.z -= mx * dx;
 
-            var my = this._margin.data[1] + this._margin.data[3];
+            var my = this._margin.y + this._margin.w;
             var dy = this._pivot.y - prevY;
-            this._margin.data[1] += my * dy;
-            this._margin.data[3] -= my * dy;
+            this._margin.y += my * dy;
+            this._margin.w -= my * dy;
 
             this._anchorDirty = true;
             this._cornersDirty = true;
             this._worldCornersDirty = true;
 
-            this._calculateSize();
+            this._calculateSize(false, false);
+
+            // we need to flag children as dirty too
+            // in order for them to update their position
+            this._flagChildrenAsDirty();
 
             this.fire('set:pivot', this._pivot);
         }
@@ -1171,7 +1265,7 @@ Object.assign(pc, function () {
             this._anchorDirty = true;
 
             if (!this.entity._dirtyLocal)
-                this.entity._dirtify(true);
+                this.entity._dirtifyLocal();
 
             this.fire('set:anchor', this._anchor);
         }
@@ -1179,13 +1273,22 @@ Object.assign(pc, function () {
 
     Object.defineProperty(ElementComponent.prototype, "_hasSplitAnchorsX", {
         get: function () {
-            return Math.abs(this._anchor.data[0] - this._anchor.data[2]) > 0.001;
+            return Math.abs(this._anchor.x - this._anchor.z) > 0.001;
         }
     });
 
     Object.defineProperty(ElementComponent.prototype, "_hasSplitAnchorsY", {
         get: function () {
-            return Math.abs(this._anchor.data[1] - this._anchor.data[3]) > 0.001;
+            return Math.abs(this._anchor.y - this._anchor.w) > 0.001;
+        }
+    });
+
+    Object.defineProperty(ElementComponent.prototype, "aabb", {
+        get: function () {
+            if (this._image) return this._image.aabb;
+            if (this._text) return this._text.aabb;
+
+            return null;
         }
     });
 
@@ -1358,14 +1461,19 @@ Object.assign(pc, function () {
             if (this._batchGroupId === value)
                 return;
 
-            if (this._batchGroupId >= 0) this.system.app.batcher.markGroupDirty(this._batchGroupId);
-            if (value >= 0) this.system.app.batcher.markGroupDirty(value);
+            if (this.entity.enabled && this._batchGroupId >= 0) {
+                this.system.app.batcher.remove(pc.BatchGroup.ELEMENT, this.batchGroupId, this.entity);
+            }
+
+            if (this.entity.enabled && value >= 0) {
+                this.system.app.batcher.insert(pc.BatchGroup.ELEMENT, value, this.entity);
+            }
 
             if (value < 0 && this._batchGroupId >= 0 && this.enabled && this.entity.enabled) {
                 // re-add model to scene, in case it was removed by batching
-                if (this._image._model) {
-                    this.addModelToLayers(this._image._model);
-                } else if (this._text._model) {
+                if (this._image && this._image._renderable.model) {
+                    this.addModelToLayers(this._image._renderable.model);
+                } else if (this._text && this._text._model) {
                     this.addModelToLayers(this._text._model);
                 }
             }
@@ -1377,12 +1485,7 @@ Object.assign(pc, function () {
     // read-only, get the entity that is currently masking this element
     Object.defineProperty(ElementComponent.prototype, "maskedBy", {
         get: function () {
-            if (this._image) {
-                return this._image._maskedBy;
-            } else if (this._text) {
-                return this._text._maskedBy;
-            }
-            return null;
+            return this._maskedBy;
         }
     });
 
@@ -1407,6 +1510,11 @@ Object.assign(pc, function () {
     };
 
     _define("fontSize");
+    _define("minFontSize");
+    _define("maxFontSize");
+    _define("maxLines");
+    _define("autoFitWidth");
+    _define("autoFitHeight");
     _define("color");
     _define("font");
     _define("fontAsset");
@@ -1417,8 +1525,10 @@ Object.assign(pc, function () {
     _define("alignment");
     _define("autoWidth");
     _define("autoHeight");
-
+    _define("rtlReorder");
+    _define("unicodeConverter");
     _define("text");
+    _define("key");
     _define("texture");
     _define("textureAsset");
     _define("material");
@@ -1430,6 +1540,13 @@ Object.assign(pc, function () {
     _define("opacity");
     _define("rect");
     _define("mask");
+    _define("outlineColor");
+    _define("outlineThickness");
+    _define("shadowColor");
+    _define("shadowOffset");
+    _define("enableMarkup");
+    _define("rangeStart");
+    _define("rangeEnd");
 
     return {
         ElementComponent: ElementComponent

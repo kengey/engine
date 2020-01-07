@@ -20,17 +20,16 @@ Object.assign(pc, function () {
      * @private
      * @constructor
      * @name pc.AudioSourceComponentSystem
+     * @extends pc.ComponentSystem
      * @classdesc Controls playback of an audio sample. This class will be deprecated in favor of {@link pc.SoundComponentSystem}.
      * @param {pc.Application} app The application managing this system.
      * @param {pc.SoundManager} manager A sound manager instance.
-     * @extends pc.ComponentSystem
      */
     var AudioSourceComponentSystem = function (app, manager) {
         pc.ComponentSystem.call(this, app);
 
         this.id = "audiosource";
         this.description = "Specifies audio assets that can be played at the position of the Entity.";
-        app.systems.add(this.id, this);
 
         this.ComponentType = pc.AudioSourceComponent;
         this.DataType = pc.AudioSourceComponentData;
@@ -41,8 +40,8 @@ Object.assign(pc, function () {
 
         this.initialized = false;
 
-        pc.ComponentSystem.on('initialize', this.onInitialize, this);
-        pc.ComponentSystem.on('update', this.onUpdate, this);
+        pc.ComponentSystem.bind('initialize', this.onInitialize, this);
+        pc.ComponentSystem.bind('update', this.onUpdate, this);
 
         this.on('remove', this.onRemove, this);
     };

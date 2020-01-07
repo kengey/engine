@@ -3,11 +3,11 @@ Object.assign(pc, function () {
      * @component
      * @constructor
      * @name pc.SoundComponent
+     * @extends pc.Component
      * @classdesc The Sound Component controls playback of {@link pc.Sound}s.
      * @description Create a new Sound Component.
      * @param {pc.SoundComponentSystem} system The ComponentSystem that created this Component
      * @param {pc.Entity} entity The entity that the Component is attached to
-     * @extends pc.Component
      * @property {Number} volume The volume modifier to play the audio with. In range 0-1.
      * @property {Number} pitch The pitch modifier to play the audio with. Must be larger than 0.01
      * @property {Boolean} positional If true the audio will play back at the location of the Entity in space, so the audio will be affect by the position of the {@link pc.AudioListenerComponent}.
@@ -171,8 +171,6 @@ Object.assign(pc, function () {
         },
 
         onEnable: function () {
-            pc.Component.prototype.onEnable.call(this);
-
             // do not run if running in Editor
             if (this.system._inTools) {
                 return;
@@ -198,8 +196,6 @@ Object.assign(pc, function () {
         },
 
         onDisable: function () {
-            pc.Component.prototype.onDisable.call(this);
-
             var slots = this.data.slots;
             var playingBeforeDisable = {};
             for (var key in slots) {
@@ -217,12 +213,16 @@ Object.assign(pc, function () {
             this.data.playingBeforeDisable = playingBeforeDisable;
         },
 
+        onRemove: function () {
+            this.off();
+        },
+
         /**
          * @function
          * @name pc.SoundComponent#addSlot
          * @description Creates a new {@link pc.SoundSlot} with the specified name.
          * @param {String} name The name of the slot
-         * @param {Object} options Settings for the slot
+         * @param {Object} [options] Settings for the slot
          * @param {Number} [options.volume=1] The playback volume, between 0 and 1.
          * @param {Number} [options.pitch=1] The relative pitch, default of 1, plays at normal pitch.
          * @param {Boolean} [options.loop=false] If true the sound will restart when it reaches the end.
@@ -245,7 +245,7 @@ Object.assign(pc, function () {
         addSlot: function (name, options) {
             var slots = this.data.slots;
             if (slots[name]) {
-                logWARNING('A sound slot with name ' + name + ' already exists on Entity ' + this.entity.getPath());
+                logWARNING('A sound slot with name ' + name + ' already exists on Entity ' + this.entity.path);
                 return null;
             }
 

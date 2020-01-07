@@ -25,7 +25,7 @@ Object.assign(pc, function () {
         var i;
         if (node.model && node.model.model && node.model.enabled) {
             if (allNodes) allNodes.push(node);
-            if (node.model.data.lightmapped) {
+            if (node.model.lightmapped) {
                 if (nodes) {
                     var hasUv1 = true;
                     var meshInstances = node.model.model.meshInstances;
@@ -80,7 +80,7 @@ Object.assign(pc, function () {
      * @param {pc.Entity} root The root entity of the scene.
      * @param {pc.Scene} scene The scene to lightmap.
      * @param {pc.ForwardRenderer} renderer The renderer.
-     * @param {Array} assets Array of assets to lightmap.
+     * @param {pc.AssetRegistry} assets Registry of assets to lightmap.
      */
     var Lightmapper = function (device, root, scene, renderer, assets) {
         this.device = device;
@@ -104,6 +104,13 @@ Object.assign(pc, function () {
     };
 
     Object.assign(Lightmapper.prototype, {
+        destroy: function () {
+            this.device = null;
+            this.root = null;
+            this.scene = null;
+            this.renderer = null;
+            this.assets = null;
+        },
 
         calculateLightmapSize: function (node) {
             var data, parent;
@@ -269,6 +276,7 @@ Object.assign(pc, function () {
                 format: pc.PIXELFORMAT_R8_G8_B8_A8,
                 rgbm: true
             });
+            blackTex.name = 'lightmap';
             for (i = 0; i < nodes.length; i++) {
                 size = this.calculateLightmapSize(nodes[i]);
                 texSize.push(size);
@@ -285,6 +293,7 @@ Object.assign(pc, function () {
                         minFilter: pc.FILTER_NEAREST,
                         magFilter: pc.FILTER_NEAREST
                     });
+                    tex.name = 'lightmap';
 
                     lmaps[pass].push(tex);
                 }
@@ -302,6 +311,7 @@ Object.assign(pc, function () {
                         minFilter: pc.FILTER_NEAREST,
                         magFilter: pc.FILTER_NEAREST
                     });
+                    tex2.name = 'lightmap';
 
                     var targ2 = new pc.RenderTarget(device, tex2, {
                         depth: false
@@ -349,7 +359,7 @@ Object.assign(pc, function () {
             var constantPixelOffset = device.scope.resolve("pixelOffset");
             var constantBakeDir = device.scope.resolve("bakeDir");
 
-            var pixelOffset = new pc.Vec2();
+            var pixelOffset = new Float32Array(2);
 
             var drawCalls = activeComp._meshInstances;
 
@@ -360,14 +370,12 @@ Object.assign(pc, function () {
 
             // Store scene values
             var origFog = scene.fog;
-            var origAmbientR = scene.ambientLight.data[0];
-            var origAmbientG = scene.ambientLight.data[1];
-            var origAmbientB = scene.ambientLight.data[2];
+            var origAmbientR = scene.ambientLight.r;
+            var origAmbientG = scene.ambientLight.g;
+            var origAmbientB = scene.ambientLight.b;
 
             scene.fog = pc.FOG_NONE;
-            scene.ambientLight.data[0] = 0;
-            scene.ambientLight.data[1] = 0;
-            scene.ambientLight.data[2] = 0;
+            scene.ambientLight.set(0, 0, 0);
 
             // Create pseudo-camera
             if (!lmCamera) {
@@ -411,8 +419,8 @@ Object.assign(pc, function () {
             var meshes;
             for (node = 0; node < allNodes.length; node++) {
                 origCastShadows[node] = allNodes[node].model.castShadows;
-                allNodes[node].model.castShadows = allNodes[node].model.data.castShadowsLightmap;
-                if (allNodes[node].model.data.castShadowsLightmap) {
+                allNodes[node].model.castShadows = allNodes[node].model.castShadowsLightmap;
+                if (allNodes[node].model.castShadowsLightmap) {
                     meshes = allNodes[node].model.meshInstances;
                     for (i = 0; i < meshes.length; i++) {
                         meshes[i].visibleThisFrame = true;
@@ -703,8 +711,9 @@ Object.assign(pc, function () {
 
                     // Dilate
                     var numDilates2x = 4; // 8 dilates
-                    pixelOffset.set(1 / lm.width, 1 / lm.height);
-                    constantPixelOffset.setValue(pixelOffset.data);
+                    pixelOffset[0] = 1 / lm.width;
+                    pixelOffset[1] = 1 / lm.height;
+                    constantPixelOffset.setValue(pixelOffset);
                     for (i = 0; i < numDilates2x; i++) {
                         constantTexSource.setValue(lm);
                         pc.drawQuadWithShader(device, targTmp, dilateShader);
@@ -775,9 +784,7 @@ Object.assign(pc, function () {
 
             // Roll back scene stuff
             scene.fog = origFog;
-            scene.ambientLight.data[0] = origAmbientR;
-            scene.ambientLight.data[1] = origAmbientG;
-            scene.ambientLight.data[2] = origAmbientB;
+            scene.ambientLight.set(origAmbientR, origAmbientG, origAmbientB);
 
             // Revert static preprocessing
             if (revertStatic) {
