@@ -2,28 +2,26 @@
 Object.assign(pc, function () {
 
     /**
-     * @constructor
+     * @class
      * @name pc.BokehEffect
-     * @classdesc Implements the BokehEffect post processing effect
+     * @classdesc Implements the BokehEffect post processing effect.
      * @description Creates new instance of the post effect.
-     * @extends pc.PostEffect
-     * @param {pc.GraphicsDevice} graphicsDevice The graphics device of the application
-     * @property {Number} maxBlur The maximum amount of blurring. Ranges from 0 to 1
-     * @property {Number} aperture Bigger values create a shallower depth of field
-     * @property {Number} focus Controls the focus of the effect
-     * @property {Number} aspect Controls the blurring effect
+     * @augments pc.PostEffect
+     * @param {pc.GraphicsDevice} graphicsDevice - The graphics device of the application.
+     * @property {number} maxBlur The maximum amount of blurring. Ranges from 0 to 1.
+     * @property {number} aperture Bigger values create a shallower depth of field.
+     * @property {number} focus Controls the focus of the effect.
+     * @property {number} aspect Controls the blurring effect.
      */
     var BokehEffect = function (graphicsDevice) {
         pc.PostEffect.call(this, graphicsDevice);
 
         this.needsDepthBuffer = true;
 
-        /**
-        * Shader author: alteredq / http://alteredqualia.com/
-        * Depth-of-field shader with bokeh
-        * ported from GLSL shader by Martins Upitis
-        * http://artmartinsh.blogspot.com/2010/02/glsl-lens-blur-filter-with-bokeh.html
-        */
+        // Shader author: alteredq / http://alteredqualia.com/
+        // Depth-of-field shader with bokeh
+        // ported from GLSL shader by Martins Upitis
+        // http://artmartinsh.blogspot.com/2010/02/glsl-lens-blur-filter-with-bokeh.html
         this.shader = new pc.Shader(graphicsDevice, {
             attributes: {
                 aPosition: pc.SEMANTIC_POSITION
@@ -41,11 +39,12 @@ Object.assign(pc, function () {
             ].join("\n"),
             fshader: [
                 "precision " + graphicsDevice.precision + " float;",
+                (graphicsDevice.webgl2) ? "#define GL2" : "",
+                pc.shaderChunks.screenDepthPS,
                 "",
                 "varying vec2 vUv0;",
                 "",
                 "uniform sampler2D uColorBuffer;",
-                "uniform sampler2D uDepthMap;",
                 "",
                 "uniform float uMaxBlur;",  // max blur amount
                 "uniform float uAperture;", // uAperture - bigger values for shallower depth of field
@@ -57,9 +56,7 @@ Object.assign(pc, function () {
                 "{",
                 "    vec2 aspectCorrect = vec2( 1.0, uAspect );",
                 "",
-                "    vec4 depth1 = texture2D( uDepthMap, vUv0 );",
-                "",
-                "    float factor = depth1.x - uFocus;",
+                "    float factor = ((getLinearScreenDepth(vUv0) * -1.0) - uFocus) / camera_params.y;",
                 "",
                 "    vec2 dofblur = vec2 ( clamp( factor * uAperture, -uMaxBlur, uMaxBlur ) );",
                 "",
@@ -121,10 +118,10 @@ Object.assign(pc, function () {
         });
 
         // Uniforms
-        this.maxBlur = 1;
-        this.aperture = 0.025;
+        this.maxBlur = 0.02;
+        this.aperture = 1;
         this.focus = 1;
-        this.aspect = 1;
+        this.aspect = graphicsDevice.width / graphicsDevice.height;
     };
 
     BokehEffect.prototype = Object.create(pc.PostEffect.prototype);
@@ -140,7 +137,7 @@ Object.assign(pc, function () {
             scope.resolve("uFocus").setValue(this.focus);
             scope.resolve("uAspect").setValue(this.aspect);
             scope.resolve("uColorBuffer").setValue(inputTarget.colorBuffer);
-            scope.resolve("uDepthMap").setValue(this.depthMap);
+
             pc.drawFullscreenQuad(device, outputTarget, this.vertexBuffer, this.shader, rect);
         }
     });

@@ -48,7 +48,7 @@ body {
     }
   }
 }
- 
+
 .sidenav-toggle {
   position: absolute;
   right: 12px;
@@ -102,14 +102,28 @@ p {
   color: $text-primary;
 }
 
+/* Go to GitHub source button area */
+.sourcenav {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+}
+
+.sourcenav .btn {
+  padding: 15px;
+  background-color: $text-active;
+  color: $text-primary;
+  cursor: pointer;
+}
+
 #example,
 iframe {
   position: fixed;
   border: 0px;
   left: 0;
   right: 0;
-  padding-left: 160px;
-  width: calc(100% - 160px);
+  padding-left: 240px;
+  width: calc(100% - 240px);
   height: 100%;
   overflow: auto;
   @media screen and (max-width: $break-medium) {

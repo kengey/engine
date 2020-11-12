@@ -1,8 +1,10 @@
+/* eslint-disable no-unused-vars */
 var categories = [
     {
         name: "animation",
         examples: [
-            "blend"
+            "blend",
+            "tweening"
         ]
     }, {
         name: "camera",
@@ -14,24 +16,49 @@ var categories = [
     }, {
         name: "graphics",
         examples: [
+            "area-picker",
+            "batching-dynamic",
+            "grab-pass",
+            "hardware-instancing",
+            "hierarchy",
             "layers",
             "lights",
             "lights-baked",
-            "loader-obj",
+            "material-anisotropic",
+            "material-clear-coat",
             "material-physical",
+            "material-translucent-specular",
+            "mesh-decals",
+            "mesh-deformation",
+            "mesh-generation",
+            "mesh-morph",
+            "mesh-morph-many",
             "model-asset",
             "model-box",
+            "model-outline",
             "model-shapes",
             "model-textured-box",
-            "portal",
+            "painter",
+            "particles-anim-index",
+            "particles-random-sprites",
             "particles-snow",
             "particles-sparks",
+            "point-cloud",
+            "point-cloud-simulation",
+            "portal",
             "post-effects",
+            "render-to-texture",
             "shader-burn",
             "shader-toon",
             "shader-wobble",
             "texture-basis",
-            "virtual-reality"
+            "transform-feedback"
+        ]
+    }, {
+        name: "loaders",
+        examples: [
+            "loader-glb",
+            "loader-obj"
         ]
     }, {
         name: "input",
@@ -43,12 +70,16 @@ var categories = [
     }, {
         name: "misc",
         examples: [
+            "mini-stats",
             "multi-application"
         ]
     }, {
         name: "physics",
         examples: [
-            "falling-shapes"
+            "compound-collision",
+            "falling-shapes",
+            "raycast",
+            "vehicle"
         ]
     }, {
         name: "sound",
@@ -59,6 +90,7 @@ var categories = [
         name: "user-interface",
         examples: [
             "button-basic",
+            "button-particle",
             "button-sprite",
             "text-basic",
             "text-canvas-font",
@@ -69,6 +101,17 @@ var categories = [
             "text-typewriter",
             "text-wrap",
             "various"
+        ]
+    }, {
+        name: "xr",
+        examples: [
+            'ar-basic',
+            'ar-hit-test',
+            'vr-basic',
+            'vr-controllers',
+            'vr-hands',
+            'vr-movement',
+            'xr-picking'
         ]
     }
 ];
